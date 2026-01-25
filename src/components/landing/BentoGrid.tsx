@@ -14,15 +14,8 @@ const features = [
         title: "Zero-Trust Key Security",
         description: "Client-side encryption with sharded keys. Only you hold the access.",
         icon: Lock,
-        className: "col-span-1 md:col-span-2",
+        className: "col-span-1 md:col-span-2 md:row-span-2",
         color: "from-vault-cyan to-blue-500",
-    },
-    {
-        title: "Merkle Proof Auditing",
-        description: "Cryptographic verification of file integrity at any time.",
-        icon: Shield,
-        className: "col-span-1",
-        color: "from-vault-violet to-purple-500",
     },
     {
         title: "Parallel Upload Engine",
@@ -32,11 +25,11 @@ const features = [
         color: "from-orange-400 to-red-500",
     },
     {
-        title: "Layer-2 Low Fees",
-        description: "Built on Polygon specifically to minimize transaction costs.",
-        icon: Coins,
+        title: "Merkle Proof Auditing",
+        description: "Cryptographic verification of file integrity at any time.",
+        icon: Shield,
         className: "col-span-1",
-        color: "from-yellow-400 to-amber-500",
+        color: "from-vault-violet to-purple-500",
     },
     {
         title: "ZK Ownership Proof",
@@ -44,6 +37,13 @@ const features = [
         icon: Fingerprint,
         className: "col-span-1 md:col-span-2",
         color: "from-vault-emerald to-green-500",
+    },
+    {
+        title: "Layer-2 Low Fees",
+        description: "Built on Polygon specifically to minimize transaction costs.",
+        icon: Coins,
+        className: "col-span-1",
+        color: "from-yellow-400 to-amber-500",
     },
 ];
 

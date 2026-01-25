@@ -6,6 +6,7 @@ import { ethers } from "ethers";
 interface WalletContextType {
     account: string | null;
     connectWallet: () => Promise<void>;
+    disconnectWallet: () => void;
     isConnected: boolean;
     chainId: string | null;
 }
@@ -13,6 +14,7 @@ interface WalletContextType {
 const WalletContext = createContext<WalletContextType>({
     account: null,
     connectWallet: async () => { },
+    disconnectWallet: () => { },
     isConnected: false,
     chainId: null,
 });
@@ -65,6 +67,12 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
         }
     };
 
+    const disconnectWallet = () => {
+        setAccount(null);
+        setIsConnected(false);
+        setChainId(null);
+    };
+
     useEffect(() => {
         checkConnection();
 
@@ -94,7 +102,7 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
     }, []);
 
     return (
-        <WalletContext.Provider value={{ account, connectWallet, isConnected, chainId }}>
+        <WalletContext.Provider value={{ account, connectWallet, disconnectWallet, isConnected, chainId }}>
             {children}
         </WalletContext.Provider>
     );

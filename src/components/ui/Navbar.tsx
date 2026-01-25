@@ -17,10 +17,11 @@ const navLinks = [
 ];
 
 export function Navbar() {
-    const { isConnected, connectWallet, account } = useWallet();
+    const { isConnected, connectWallet, disconnectWallet, account } = useWallet();
     const pathname = usePathname();
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     const [isScrolled, setIsScrolled] = useState(false);
+    const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
     useEffect(() => {
         const handleScroll = () => {
@@ -32,6 +33,14 @@ export function Navbar() {
 
     const formatAddress = (addr: string) => {
         return `${addr.substring(0, 6)}...${addr.substring(addr.length - 4)}`;
+    };
+
+    const handleWalletClick = () => {
+        if (isConnected) {
+            setIsDropdownOpen(!isDropdownOpen);
+        } else {
+            connectWallet();
+        }
     };
 
     return (
@@ -74,18 +83,62 @@ export function Navbar() {
                     </div>
 
                     <div className="flex items-center gap-4">
-                        <button
-                            onClick={connectWallet}
-                            className={clsx(
-                                "px-5 py-2 rounded-full text-sm font-semibold transition-all duration-300 flex items-center gap-2 shadow-lg",
-                                isConnected
-                                    ? "bg-vault-emerald/10 text-vault-emerald border border-vault-emerald/20 hover:bg-vault-emerald/20"
-                                    : "bg-white text-black hover:shadow-[0_0_20px_rgba(255,255,255,0.4)]"
-                            )}
-                        >
-                            <Wallet size={16} />
-                            {isConnected && account ? formatAddress(account) : "Connect"}
-                        </button>
+                        <div className="relative">
+                            <button
+                                onClick={handleWalletClick}
+                                className={clsx(
+                                    "px-5 py-2 rounded-full text-sm font-semibold transition-all duration-300 flex items-center gap-2 shadow-lg",
+                                    isConnected
+                                        ? "bg-vault-emerald/10 text-vault-emerald border border-vault-emerald/20 hover:bg-vault-emerald/20"
+                                        : "bg-white text-black hover:shadow-[0_0_20px_rgba(255,255,255,0.4)]"
+                                )}
+                            >
+                                <Wallet size={16} />
+                                {isConnected && account ? formatAddress(account) : "Connect"}
+                            </button>
+
+                            <AnimatePresence>
+                                {isDropdownOpen && isConnected && (
+                                    <motion.div
+                                        initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                                        exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                                        transition={{ duration: 0.2 }}
+                                        className="absolute top-full right-0 mt-2 w-48 bg-black/90 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50"
+                                    >
+                                        <div className="p-1">
+                                            <Link
+                                                href="/dashboard"
+                                                className="flex items-center gap-2 px-4 py-2 text-sm text-white/80 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                                                onClick={() => setIsDropdownOpen(false)}
+                                            >
+                                                <Database size={16} />
+                                                Profile
+                                            </Link>
+                                            <Link
+                                                href="/settings"
+                                                className="flex items-center gap-2 px-4 py-2 text-sm text-white/80 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                                                onClick={() => setIsDropdownOpen(false)}
+                                            >
+                                                <Settings size={16} />
+                                                Settings
+                                            </Link>
+                                            <div className="h-px bg-white/10 my-1" />
+                                            <button
+                                                onClick={() => {
+                                                    disconnectWallet();
+                                                    setIsDropdownOpen(false);
+                                                }}
+                                                className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-400 hover:text-red-300 hover:bg-white/5 rounded-lg transition-colors text-left"
+                                            >
+                                                <Share2 className="rotate-90" size={16} />
+                                                Log out
+                                            </button>
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+                        </div>
 
                         {/* Mobile Menu Toggle */}
                         <button

@@ -1,12 +1,22 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { ArrowRight, Wallet } from "lucide-react";
+import { ArrowRight, Wallet, Sparkles } from "lucide-react";
 import { BentoGrid } from "@/components/landing/BentoGrid";
 import { useWallet } from "@/context/WalletContext";
 
 export default function Home() {
-  const { connectWallet } = useWallet();
+  const { connectWallet, isConnected } = useWallet();
+  const router = useRouter();
+
+  const handleGetStarted = () => {
+    if (isConnected) {
+      router.push("/dashboard");
+    } else {
+      connectWallet();
+    }
+  };
 
   return (
     <main className="min-h-screen flex flex-col items-center relative overflow-hidden bg-background text-foreground">
@@ -48,11 +58,11 @@ export default function Home() {
           className="flex flex-col sm:flex-row gap-4 items-center"
         >
           <button
-            onClick={connectWallet}
+            onClick={handleGetStarted}
             className="group relative px-8 py-4 bg-white text-black font-semibold rounded-full flex items-center gap-2 hover:shadow-[0_0_40px_-10px_rgba(255,255,255,0.7)] transition-all duration-300"
           >
             <span className="relative z-10 flex items-center gap-2">
-              Connect Wallet <Wallet size={18} />
+              Get Started <Sparkles size={18} />
             </span>
           </button>
 

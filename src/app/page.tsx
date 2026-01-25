@@ -1,65 +1,79 @@
-import Image from "next/image";
+"use client";
+
+import { motion } from "framer-motion";
+import { ArrowRight, Wallet } from "lucide-react";
+import { BentoGrid } from "@/components/landing/BentoGrid";
+import { useWallet } from "@/context/WalletContext";
 
 export default function Home() {
+  const { connectWallet } = useWallet();
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
+    <main className="min-h-screen flex flex-col items-center relative overflow-hidden bg-background text-foreground">
+      {/* Background Gradients */}
+      <div className="absolute top-0 left-0 w-full h-full overflow-hidden -z-10 fixed">
+        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-vault-cyan/20 rounded-full blur-[120px] animate-[float_10s_infinite]" />
+        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-vault-violet/20 rounded-full blur-[120px] animate-[float_12s_infinite_reverse]" />
+      </div>
+
+      {/* Hero Section */}
+      <section className="container mx-auto px-4 z-10 flex flex-col items-center text-center min-h-screen justify-center">
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, ease: "easeOut" }}
+          className="mb-6 relative"
+        >
+          <div className="absolute -inset-4 bg-vault-cyan/20 blur-xl opacity-50 rounded-full" />
+          <h1 className="text-6xl md:text-8xl font-bold tracking-tighter bg-clip-text text-transparent bg-gradient-to-br from-white via-white to-white/50 relative z-10 font-heading">
+            VAULTIUM
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+        </motion.div>
+
+        <motion.p
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, delay: 0.2, ease: "easeOut" }}
+          className="text-xl md:text-2xl text-white/60 mb-8 max-w-2xl font-light"
+        >
+          Zero-Trust. Auditable. <span className="text-vault-cyan font-medium">Decentralized.</span>
+          <br />
+          The future of secure layer-2 storage.
+        </motion.p>
+
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.5, delay: 0.4 }}
+          className="flex flex-col sm:flex-row gap-4 items-center"
+        >
+          <button
+            onClick={connectWallet}
+            className="group relative px-8 py-4 bg-white text-black font-semibold rounded-full flex items-center gap-2 hover:shadow-[0_0_40px_-10px_rgba(255,255,255,0.7)] transition-all duration-300"
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+            <span className="relative z-10 flex items-center gap-2">
+              Connect Wallet <Wallet size={18} />
+            </span>
+          </button>
+
+          <button className="px-8 py-4 glass-panel rounded-full text-white/80 hover:text-white hover:bg-white/5 transition-all flex items-center gap-2">
+            View Audit Proofs <ArrowRight size={18} />
+          </button>
+        </motion.div>
+      </section>
+
+      {/* Features Grid */}
+      <BentoGrid />
+
+      {/* Footer */}
+      <footer className="w-full py-12 border-t border-white/5 mt-24 z-10 bg-black/50 backdrop-blur-xl">
+        <div className="container mx-auto px-4 text-center text-white/40 text-sm">
+          <p>&copy; 2024 Vaultium Decentralized Storage. All rights reserved.</p>
         </div>
-      </main>
-    </div>
+      </footer>
+
+      {/* Grid Overlay */}
+      <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)] pointer-events-none fixed" />
+    </main>
   );
 }

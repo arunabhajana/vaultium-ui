@@ -3,6 +3,7 @@
 import { useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Upload, File as FileIcon, X, CheckCircle, Loader2 } from "lucide-react";
+import clsx from "clsx";
 
 // Mock Upload State
 interface UploadingFile {
@@ -10,7 +11,37 @@ interface UploadingFile {
     size: string;
     progress: number;
     status: "encrypting" | "sharding" | "uploading" | "confirming" | "complete";
+    totalChunks?: number; // Added for ChunkVisualizer
 }
+
+// Chunk Visualizer Component
+const ChunkVisualizer = ({ totalChunks, progress }: { totalChunks: number, progress: number }) => {
+    // Determine how many chunks are "complete" based on progress percentage
+    const completedCount = Math.floor((progress / 100) * totalChunks);
+
+    return (
+        <div className="w-full mt-3">
+            <div className="flex justify-between text-xs text-white/40 mb-1">
+                <span>Parallel Upload</span>
+                <span>{Math.min(100, Math.round(progress))}%</span>
+            </div>
+            <div className="flex gap-1 flex-wrap">
+                {Array.from({ length: totalChunks }).map((_, i) => (
+                    <motion.div
+                        key={i}
+                        className={clsx(
+                            "h-2 rounded-sm flex-1 min-w-[4px] transition-colors duration-300",
+                            i < completedCount ? "bg-vault-cyan shadow-[0_0_5px_cyan]" : "bg-white/10"
+                        )}
+                        initial={{ scaleY: 0 }}
+                        animate={{ scaleY: 1 }}
+                        transition={{ delay: i * 0.05 }}
+                    />
+                ))}
+            </div>
+        </div>
+    );
+};
 
 export default function Vault() {
     const [activeUploads, setActiveUploads] = useState<UploadingFile[]>([]);
@@ -18,9 +49,6 @@ export default function Vault() {
 
     const handleUpload = useCallback(async (files: FileList | null) => {
         if (!files) return;
-
-        // Generate a single key for this batch (or per file - per file is safer/better practice here)
-        // For simplicity and security, let's generate a key per file
 
         const filesArray = Array.from(files);
 
@@ -36,47 +64,90 @@ export default function Vault() {
 
         for (const file of filesArray) {
             try {
+                // Get Chunk Size from Settings
+                let chunkSize = parseInt(process.env.NEXT_PUBLIC_DEFAULT_CHUNK_SIZE || "1048576");
+                if (typeof window !== "undefined") {
+                    const saved = localStorage.getItem("vaultium_chunk_size");
+                    if (saved) chunkSize = parseInt(saved);
+                }
+
                 // 1. Generate Key
                 const key = await import("../../utils/encryption").then(m => m.generateKey());
 
-                // 2. Encrypt (Update status)
-                setActiveUploads(prev => prev.map(u => u.name === file.name ? { ...u, status: "encrypting", progress: 30 } : u));
+                // 2. Encrypt
+                setActiveUploads(prev => prev.map(u => u.name === file.name ? { ...u, status: "encrypting", progress: 10 } : u));
                 const encryptedBlob = await import("../../utils/encryption").then(m => m.encryptFile(file, key));
 
-                // 3. Prepare Upload
-                setActiveUploads(prev => prev.map(u => u.name === file.name ? { ...u, status: "uploading", progress: 60 } : u));
-                const formData = new FormData();
-                // Send original name but encrypted content
-                formData.append("file", encryptedBlob, file.name);
+                // 3. Chunking
+                setActiveUploads(prev => prev.map(u => u.name === file.name ? { ...u, status: "sharding", progress: 30 } : u));
+                const { createChunks, createManifest } = await import("../../utils/chunking");
+                const chunks = createChunks(encryptedBlob, chunkSize);
+                console.log(`Split ${file.name} into ${chunks.length} chunks (Size: ${chunkSize})`);
 
-                // 4. Upload
-                const response = await fetch("/api/upload", {
-                    method: "POST",
-                    body: formData,
+                // 4. Parallel Upload
+                setActiveUploads(prev => prev.map(u => u.name === file.name ? { ...u, status: "uploading", progress: 40, totalChunks: chunks.length } : u));
+
+                let completedChunks = 0;
+                const totalChunks = chunks.length;
+
+                const uploadPromises = chunks.map(async (chunk, index) => {
+                    const formData = new FormData();
+                    // Append index to name to avoid collisions in simple storage if needed, though API handles uniqueness locally.
+                    // Important: We're uploading raw chunks.
+                    formData.append("file", chunk, `${file.name}.part${index}`);
+
+                    console.log(`Uploading chunk ${index + 1}/${totalChunks}`);
+
+                    const res = await fetch("/api/upload", {
+                        method: "POST",
+                        body: formData,
+                    });
+
+                    if (!res.ok) throw new Error(`Chunk ${index} upload failed`);
+                    const data = await res.json();
+
+                    completedChunks++;
+                    // Update progress: 40% -> 90% range for uploads
+                    const currentProgress = 40 + ((completedChunks / totalChunks) * 50);
+                    setActiveUploads(prev => prev.map(u => u.name === file.name ? { ...u, progress: currentProgress } : u));
+
+                    return data.cid;
                 });
 
-                if (!response.ok) throw new Error("Upload failed");
+                const chunkCids = await Promise.all(uploadPromises);
+                console.log("All chunks uploaded:", chunkCids);
 
-                const data = await response.json();
+                // 5. Create & Upload Manifest
+                setActiveUploads(prev => prev.map(u => u.name === file.name ? { ...u, status: "confirming", progress: 95 } : u));
 
-                // 4.5. Store on Blockchain
-                if (data.cid) {
-                    setActiveUploads(prev => prev.map(u => u.name === file.name ? { ...u, status: "confirming", progress: 80 } : u));
+                const manifestFile = createManifest(file.name, file.size, file.type, chunkCids, chunkSize);
+                const manifestFormData = new FormData();
+                manifestFormData.append("file", manifestFile);
 
-                    // Dynamic import to avoid SSR issues if any, though "use client" handles it. 
-                    // Using standard import at top is better, but local here is fine for now if I don't want to change top level imports too much.
-                    // But I should add import at top. I will add import at top in next step or use dynamic import here.
-                    // Let's use dynamic import for safety since I'm editing a chunk.
+                const manifestRes = await fetch("/api/upload", {
+                    method: "POST",
+                    body: manifestFormData,
+                });
+
+                if (!manifestRes.ok) throw new Error("Manifest upload failed");
+                const manifestData = await manifestRes.json();
+                const manifestCID = manifestData.cid;
+                console.log("Manifest uploaded:", manifestCID);
+
+                // 6. Store on Blockchain
+                if (manifestCID) {
                     const { uploadFileToBlockchain } = await import("../../../utils/blockchain/vaultiumStorage");
-                    await uploadFileToBlockchain(data.cid, file.name, file.size, file.type);
+                    // Store the MANIFEST CID, not the file content CID.
+                    // Blockchain sees it as one file (the manifest).
+                    await uploadFileToBlockchain(manifestCID, file.name, file.size, file.type);
                 }
 
-                // 5. Complete
+                // 7. Complete
                 setActiveUploads(prev => prev.map(u => u.name === file.name ? { ...u, status: "complete", progress: 100 } : u));
 
             } catch (error) {
                 console.error("Error processing file:", file.name, error);
-                setActiveUploads(prev => prev.map(u => u.name === file.name ? { ...u, status: "complete", progress: 0 } : u)); // Or error status if UI supported it
+                setActiveUploads(prev => prev.map(u => u.name === file.name ? { ...u, status: "complete", progress: 0 } : u));
             }
         }
     }, []);
@@ -103,12 +174,12 @@ export default function Vault() {
                 onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
                 onDragLeave={() => setIsDragOver(false)}
                 onDrop={handleDrop}
-                className={`
-          relative border-2 border-dashed rounded-3xl p-12 text-center transition-all duration-300
-          ${isDragOver
+                className={clsx(
+                    "relative border-2 border-dashed rounded-3xl p-12 text-center transition-all duration-300",
+                    isDragOver
                         ? "border-vault-cyan bg-vault-cyan/10 scale-[1.01]"
-                        : "border-white/10 bg-white/5 hover:bg-white/10 hover:border-white/20"}
-        `}
+                        : "border-white/10 bg-white/5 hover:bg-white/10 hover:border-white/20"
+                )}
             >
                 <div className="flex flex-col items-center gap-4 pointer-events-none">
                     <div className="w-20 h-20 rounded-full bg-gradient-to-br from-vault-cyan to-vault-violet flex items-center justify-center shadow-2xl shadow-vault-cyan/20">
@@ -148,14 +219,18 @@ export default function Vault() {
                                 </div>
 
                                 {/* Progress Bar */}
-                                <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
-                                    <motion.div
-                                        className="h-full bg-gradient-to-r from-vault-cyan to-vault-violet"
-                                        initial={{ width: 0 }}
-                                        animate={{ width: `${file.progress}%` }}
-                                        transition={{ duration: 0.5 }}
-                                    />
-                                </div>
+                                {file.status === "uploading" && file.totalChunks ? (
+                                    <ChunkVisualizer totalChunks={file.totalChunks} progress={file.progress} />
+                                ) : (
+                                    <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
+                                        <motion.div
+                                            className="h-full bg-gradient-to-r from-vault-cyan to-vault-violet"
+                                            initial={{ width: 0 }}
+                                            animate={{ width: `${file.progress}%` }}
+                                            transition={{ duration: 0.5 }}
+                                        />
+                                    </div>
+                                )}
 
                                 <div className="flex justify-between items-center mt-2 text-xs">
                                     <span className="text-white/40 uppercase tracking-wider font-semibold flex items-center gap-2">
@@ -169,7 +244,6 @@ export default function Vault() {
                                             </span>
                                         )}
                                     </span>
-                                    <span className="text-white/40">{Math.round(file.progress)}%</span>
                                 </div>
                             </div>
                         </motion.div>

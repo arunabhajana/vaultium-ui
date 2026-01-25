@@ -2,8 +2,8 @@
 
 import { useWallet } from "@/context/WalletContext";
 import { motion } from "framer-motion";
-import { Key, Shield, RefreshCw, Smartphone, Globe, Lock, ToggleLeft, ToggleRight } from "lucide-react";
-import { useState } from "react";
+import { Key, Shield, RefreshCw, Smartphone, Globe, Lock, ToggleLeft, ToggleRight, UploadCloud } from "lucide-react";
+import { useState, useEffect } from "react";
 import clsx from "clsx";
 
 export default function Settings() {
@@ -75,6 +75,9 @@ export default function Settings() {
                 </p>
             </section>
 
+            {/* Upload Settings */}
+            <ChunkSizeSettings />
+
             {/* Security Preferences */}
             <section className="mb-8">
                 <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
@@ -113,5 +116,58 @@ export default function Settings() {
                 </div>
             </section>
         </div>
+    );
+}
+
+function ChunkSizeSettings() {
+    const [chunkSize, setChunkSize] = useState<number>(1048576);
+
+    useEffect(() => {
+        const saved = localStorage.getItem("vaultium_chunk_size");
+        if (saved) setChunkSize(parseInt(saved));
+        else {
+            const defaultSize = parseInt(process.env.NEXT_PUBLIC_DEFAULT_CHUNK_SIZE || "1048576");
+            setChunkSize(defaultSize);
+        }
+    }, []);
+
+    const handleSave = (size: number) => {
+        setChunkSize(size);
+        localStorage.setItem("vaultium_chunk_size", size.toString());
+    };
+
+    const formatSize = (bytes: number) => {
+        return (bytes / (1024 * 1024)) + " MB";
+    };
+
+    return (
+        <section className="mb-8">
+            <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+                <UploadCloud size={20} className="text-vault-cyan" /> Parallel Upload Settings
+            </h2>
+            <div className="glass-panel p-6 rounded-3xl">
+                <div className="mb-4">
+                    <h3 className="font-bold mb-1">Chunk Size</h3>
+                    <p className="text-sm text-white/50">Larger chunks = fewer requests but higher memory usage.</p>
+                </div>
+
+                <div className="flex gap-4">
+                    {[1048576, 2097152, 5242880].map((size) => (
+                        <button
+                            key={size}
+                            onClick={() => handleSave(size)}
+                            className={clsx(
+                                "px-6 py-3 rounded-xl font-bold transition-all border",
+                                chunkSize === size
+                                    ? "bg-vault-cyan/20 text-vault-cyan border-vault-cyan/50 shadow-[0_0_15px_rgba(6,182,212,0.2)]"
+                                    : "bg-white/5 text-white/60 border-white/5 hover:bg-white/10 hover:text-white"
+                            )}
+                        >
+                            {formatSize(size)}
+                        </button>
+                    ))}
+                </div>
+            </div>
+        </section>
     );
 }

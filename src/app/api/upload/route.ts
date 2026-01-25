@@ -70,31 +70,54 @@ export async function POST(req: NextRequest) {
             pinStatus = "IPFS Error";
         }
 
-        // Update Metadata
-        const metadataPath = path.join(uploadDir, "metadata.json");
-        let metadata = [];
-        try {
-            const data = await readFile(metadataPath, "utf-8");
-            metadata = JSON.parse(data);
-        } catch (e) {
-            // File doesn't exist or is empty
+        // Update Metadata (Only if NOT a chunk part)
+        const isChunk = safeName.includes(".part");
+
+        if (!isChunk) {
+            const metadataPath = path.join(uploadDir, "metadata.json");
+            let metadata = [];
+            try {
+                const data = await readFile(metadataPath, "utf-8");
+                metadata = JSON.parse(data);
+            } catch (e) {
+                // File doesn't exist or is empty
+            }
+
+            // Extract real metadata if it's a manifest
+            let finalName = file.name;
+            let finalSize = file.size;
+            let finalType = file.type;
+
+            if (file.name === "manifest.json") {
+                try {
+                    const manifestContent = JSON.parse(buffer.toString("utf-8"));
+                    if (manifestContent.name && manifestContent.size) {
+                        finalName = manifestContent.name;
+                        finalSize = manifestContent.size;
+                        finalType = manifestContent.type || file.type;
+                        console.log(`📄 Parsed Manifest: ${finalName} (${finalSize} bytes)`);
+                    }
+                } catch (err) {
+                    console.error("Failed to parse manifest for metadata:", err);
+                }
+            }
+
+            const newFileEntry = {
+                id: crypto.randomUUID(),
+                name: finalName,
+                filename: safeName, // Keep actual filename on disk (manifest.json)
+                size: finalSize,
+                type: finalType,
+                uploadedAt: new Date().toISOString(),
+                status: "Encrypted & Stored",
+                cid: ipfsData.IpfsHash,
+                ipfsGateway: process.env.NEXT_PUBLIC_IPFS_GATEWAY || "https://gateway.pinata.cloud/ipfs/",
+                pinStatus: pinStatus
+            };
+
+            metadata.unshift(newFileEntry);
+            await writeFile(metadataPath, JSON.stringify(metadata, null, 2));
         }
-
-        const newFileEntry = {
-            id: crypto.randomUUID(),
-            name: file.name,
-            filename: safeName,
-            size: file.size,
-            type: file.type,
-            uploadedAt: new Date().toISOString(),
-            status: "Encrypted & Stored",
-            cid: ipfsData.IpfsHash,
-            ipfsGateway: process.env.NEXT_PUBLIC_IPFS_GATEWAY || "https://gateway.pinata.cloud/ipfs/",
-            pinStatus: pinStatus
-        };
-
-        metadata.unshift(newFileEntry);
-        await writeFile(metadataPath, JSON.stringify(metadata, null, 2));
 
         console.log("--------------------------------------------------");
         console.log("🔐 Encrypted File Saved & Processed");

@@ -13,7 +13,6 @@ const navLinks = [
     { name: "Vault", href: "/vault", icon: FileText },
     { name: "Shared", href: "/shared", icon: Share2 },
     { name: "Audit", href: "/audit", icon: ShieldCheck },
-    { name: "Settings", href: "/settings", icon: Settings },
 ];
 
 export function Navbar() {

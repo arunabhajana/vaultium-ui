@@ -9,7 +9,7 @@ interface UploadingFile {
     name: string;
     size: string;
     progress: number;
-    status: "encrypting" | "sharding" | "uploading" | "complete";
+    status: "encrypting" | "sharding" | "uploading" | "confirming" | "complete";
 }
 
 export default function Vault() {
@@ -56,6 +56,20 @@ export default function Vault() {
                 });
 
                 if (!response.ok) throw new Error("Upload failed");
+
+                const data = await response.json();
+
+                // 4.5. Store on Blockchain
+                if (data.cid) {
+                    setActiveUploads(prev => prev.map(u => u.name === file.name ? { ...u, status: "confirming", progress: 80 } : u));
+
+                    // Dynamic import to avoid SSR issues if any, though "use client" handles it. 
+                    // Using standard import at top is better, but local here is fine for now if I don't want to change top level imports too much.
+                    // But I should add import at top. I will add import at top in next step or use dynamic import here.
+                    // Let's use dynamic import for safety since I'm editing a chunk.
+                    const { uploadFileToBlockchain } = await import("../../../utils/blockchain/vaultiumStorage");
+                    await uploadFileToBlockchain(data.cid, file.name, file.size, file.type);
+                }
 
                 // 5. Complete
                 setActiveUploads(prev => prev.map(u => u.name === file.name ? { ...u, status: "complete", progress: 100 } : u));

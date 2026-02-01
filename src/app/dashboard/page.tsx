@@ -4,12 +4,13 @@ import { useWallet } from "@/context/WalletContext";
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { HardDrive, File, Activity, UploadCloud, ShieldCheck, ArrowUpRight } from "lucide-react";
-import { Download, Lock, CheckCircle, XCircle, Loader2, AlertTriangle } from "lucide-react";
+import { Download, Lock, CheckCircle, XCircle, Loader2, AlertTriangle, Share2, Users } from "lucide-react";
 import Link from "next/link";
 import clsx from "clsx";
 import { getUserFiles } from "../../../utils/blockchain/vaultiumStorage";
-import { decryptFile, importKey } from "../../utils/encryption";
+import { decryptFile, importKey, exportKey } from "../../utils/encryption";
 import { computeFileHash } from "../../utils/hash";
+import { shareFile, getSharedFiles } from "../../utils/sharing";
 
 export default function Dashboard() {
     const { account } = useWallet();
@@ -22,6 +23,10 @@ export default function Dashboard() {
     ]);
     const [downloading, setDownloading] = useState<string | null>(null);
     const [verificationStatus, setVerificationStatus] = useState<{ [key: string]: 'verified' | 'tampered' | null }>({});
+
+    // Share Modal State
+    const [sharingFile, setSharingFile] = useState<any | null>(null);
+    const [shareAddress, setShareAddress] = useState("");
 
     const handleDownload = async (fileRec: any) => {
         if (downloading) return;
@@ -38,8 +43,15 @@ export default function Dashboard() {
             const manifest = await manifestRes.json();
 
             // 2. Get Key
-            const localKeys = JSON.parse(localStorage.getItem("vault_keys") || "{}");
-            const keyJwk = localKeys[fileRec.cid];
+            // If shared, the key is attached to the record. If own file, get from local storage.
+            let keyJwk;
+            if (fileRec.isShared) {
+                keyJwk = fileRec.keyJwk;
+            } else {
+                const localKeys = JSON.parse(localStorage.getItem("vault_keys") || "{}");
+                keyJwk = localKeys[fileRec.cid];
+            }
+
             if (!keyJwk) {
                 alert("Decryption Key not found on this device! Cannot decrypt.");
                 throw new Error("Key missing");
@@ -93,6 +105,25 @@ export default function Dashboard() {
         }
     };
 
+    const handleShare = async () => {
+        if (!sharingFile || !shareAddress || !account) return;
+        try {
+            // 1. Get Key to share
+            const localKeys = JSON.parse(localStorage.getItem("vault_keys") || "{}");
+            const keyJwk = localKeys[sharingFile.cid];
+            if (!keyJwk) throw new Error("Key not found");
+
+            // 2. Share
+            shareFile(sharingFile, account, shareAddress, keyJwk);
+            alert(`File shared with ${shareAddress}`);
+            setSharingFile(null);
+            setShareAddress("");
+        } catch (error) {
+            console.error("Share failed", error);
+            alert("Share failed: Key not found or invalid address");
+        }
+    };
+
     useEffect(() => {
         const fetchFiles = async () => {
             if (!account) return;
@@ -111,6 +142,12 @@ export default function Dashboard() {
                     }));
 
                     setFiles(data);
+
+                    // Fetch Shared Files
+                    const shared = getSharedFiles(account);
+                    if (shared.length > 0) {
+                        setFiles(prev => [...prev, ...shared]);
+                    }
 
                     // Update Stats
                     const totalSize = data.reduce((acc, curr) => acc + curr.size, 0);
@@ -261,7 +298,7 @@ export default function Dashboard() {
                                 <th className="pb-4 pl-4 font-medium">Name</th>
                                 <th className="pb-4 font-medium">Size</th>
                                 <th className="pb-4 font-medium">Date</th>
-                                <th className="pb-4 font-medium">Integrity</th>
+                                <th className="pb-4 font-medium">Status & Integrity</th>
                                 <th className="pb-4 pr-4 text-right">Action</th>
                             </tr>
                         </thead>
@@ -280,6 +317,11 @@ export default function Dashboard() {
                                                 <File size={18} />
                                             </div>
                                             {file.name}
+                                            {file.isShared && (
+                                                <span className="text-[10px] uppercase px-1.5 py-0.5 bg-vault-violet/20 text-vault-violet rounded border border-vault-violet/30 ml-2 font-bold">
+                                                    Shared by {file.sharedBy.substring(0, 4)}...
+                                                </span>
+                                            )}
                                         </td>
                                         <td className="py-4 text-white/60 font-mono text-sm">
                                             {(file.size / (1024 * 1024)).toFixed(2)} MB
@@ -288,19 +330,37 @@ export default function Dashboard() {
                                             {new Date(file.uploadedAt).toLocaleDateString()}
                                         </td>
                                         <td className="py-4">
-                                            {verificationStatus[file.cid] === 'verified' && (
-                                                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-vault-emerald/10 text-vault-emerald text-xs font-bold border border-vault-emerald/20">
-                                                    <CheckCircle size={12} /> Verified
-                                                </span>
-                                            )}
-                                            {verificationStatus[file.cid] === 'tampered' && (
-                                                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-red-500/10 text-red-500 text-xs font-bold border border-red-500/20">
-                                                    <AlertTriangle size={12} /> Tampered
-                                                </span>
-                                            )}
-                                            {!verificationStatus[file.cid] && <span className="text-white/20 text-xs">-</span>}
+                                            <div className="flex flex-col gap-1 items-start">
+                                                {/* Status Indicators */}
+                                                <div className="flex gap-1">
+                                                    <span className="text-[10px] uppercase px-1.5 py-0.5 bg-white/10 rounded text-white/50 border border-white/5" title="Encrypted Local AES">ENC</span>
+                                                    <span className="text-[10px] uppercase px-1.5 py-0.5 bg-white/10 rounded text-white/50 border border-white/5" title="Stored on IPFS">IPFS</span>
+                                                    <span className="text-[10px] uppercase px-1.5 py-0.5 bg-white/10 rounded text-white/50 border border-white/5" title="Verified on Blockchain">CHAIN</span>
+                                                </div>
+
+                                                {/* Integrity Badge */}
+                                                {verificationStatus[file.cid] === 'verified' && (
+                                                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-vault-emerald/10 text-vault-emerald text-xs font-bold border border-vault-emerald/20">
+                                                        <CheckCircle size={12} /> Verified
+                                                    </span>
+                                                )}
+                                                {verificationStatus[file.cid] === 'tampered' && (
+                                                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-red-500/10 text-red-500 text-xs font-bold border border-red-500/20">
+                                                        <AlertTriangle size={12} /> Tampered
+                                                    </span>
+                                                )}
+                                            </div>
                                         </td>
-                                        <td className="py-4 pr-4 text-right">
+                                        <td className="py-4 pr-4 text-right flex justify-end gap-2">
+                                            {!file.isShared && (
+                                                <button
+                                                    onClick={() => setSharingFile(file)}
+                                                    className="p-2 bg-white/5 hover:bg-white/10 text-white rounded-lg transition-all border border-white/5 hover:border-vault-violet/30"
+                                                    title="Share Access"
+                                                >
+                                                    <Share2 size={16} />
+                                                </button>
+                                            )}
                                             <button
                                                 onClick={() => handleDownload(file)}
                                                 disabled={downloading === file.cid}
@@ -321,6 +381,54 @@ export default function Dashboard() {
                     </table>
                 </div>
             </motion.div>
+
+            {/* Share Modal */}
+            {sharingFile && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="bg-black border border-white/10 p-6 rounded-2xl w-full max-w-md shadow-2xl"
+                    >
+                        <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+                            <Share2 className="text-vault-violet" /> Share File
+                        </h3>
+                        <p className="text-white/60 text-sm mb-4">
+                            Share <span className="text-white font-bold">{sharingFile.name}</span> with another wallet.
+                            They will be able to download and decrypt it.
+                        </p>
+
+                        <div className="space-y-4">
+                            <div>
+                                <label className="text-xs uppercase text-white/40 font-bold tracking-wider mb-2 block">Recipient Address</label>
+                                <input
+                                    type="text"
+                                    value={shareAddress}
+                                    onChange={(e) => setShareAddress(e.target.value)}
+                                    placeholder="0x..."
+                                    className="w-full bg-white/5 border border-white/10 text-white p-3 rounded-xl focus:border-vault-violet outline-none font-mono text-sm"
+                                />
+                            </div>
+
+                            <div className="flex justify-end gap-3 mt-6">
+                                <button
+                                    onClick={() => setSharingFile(null)}
+                                    className="px-4 py-2 text-white/60 hover:text-white text-sm font-bold"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleShare}
+                                    disabled={!shareAddress.startsWith("0x")}
+                                    className="px-6 py-2 bg-vault-violet hover:bg-vault-violet/80 text-white rounded-xl text-sm font-bold shadow-lg shadow-vault-violet/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    Share Access
+                                </button>
+                            </div>
+                        </div>
+                    </motion.div>
+                </div>
+            )}
         </div>
     );
 }

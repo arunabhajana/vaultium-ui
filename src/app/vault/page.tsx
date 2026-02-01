@@ -143,7 +143,7 @@ export default function Vault() {
 
                 // 6. Store on Blockchain
                 if (manifestCID) {
-                    const { uploadFileToBlockchain } = await import("../../utils/blockchainHelper");
+                    const { uploadFileToBlockchain } = await import("../../../utils/blockchain/vaultiumStorage");
                     // Store the MANIFEST CID, not the file content CID.
                     // Blockchain sees it as one file (the manifest).
                     await uploadFileToBlockchain(manifestCID, file.name, file.size, file.type);

@@ -7,7 +7,7 @@ import { HardDrive, File, Activity, UploadCloud, ShieldCheck, ArrowUpRight } fro
 import { Download, Lock, CheckCircle, XCircle, Loader2, AlertTriangle } from "lucide-react";
 import Link from "next/link";
 import clsx from "clsx";
-import { getUserFiles } from "../../utils/blockchainHelper";
+import { getUserFiles } from "../../../utils/blockchain/vaultiumStorage";
 import { decryptFile, importKey } from "../../utils/encryption";
 import { computeFileHash } from "../../utils/hash";
 
@@ -98,9 +98,18 @@ export default function Dashboard() {
             if (!account) return;
             try {
                 // Use Blockchain Helper
-                const data = await getUserFiles(account);
+                const rawData = await getUserFiles();
 
-                if (Array.isArray(data)) {
+                if (Array.isArray(rawData)) {
+                    // Map FileMetadata to Dashboard properties
+                    const data = rawData.map(f => ({
+                        cid: f.cid,
+                        name: f.fileName,
+                        size: f.fileSize,
+                        uploadedAt: f.uploadTime * 1000, // s to ms
+                        type: f.fileType
+                    }));
+
                     setFiles(data);
 
                     // Update Stats
@@ -235,7 +244,7 @@ export default function Dashboard() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.5 }}
-                className="glass-panel p-8 rounded-3xl"
+                className="glass-panel p-8 rounded-3xl mt-12"
             >
                 <div className="flex items-center justify-between mb-6">
                     <h3 className="text-xl font-bold font-heading">Your Vault</h3>

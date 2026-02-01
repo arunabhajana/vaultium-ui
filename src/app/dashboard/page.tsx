@@ -44,19 +44,34 @@ export default function Dashboard() {
 
             // 2. Get Key
             // If shared, the key is attached to the record. If own file, get from local storage.
-            let keyJwk;
-            if (fileRec.isShared) {
-                keyJwk = fileRec.keyJwk;
-            } else {
-                const localKeys = JSON.parse(localStorage.getItem("vault_keys") || "{}");
-                keyJwk = localKeys[fileRec.cid];
-            }
+            let key: CryptoKey; // Declare key in outer scope
 
-            if (!keyJwk) {
-                alert("Decryption Key not found on this device! Cannot decrypt.");
-                throw new Error("Key missing");
+            if (!fileRec.isShared) {
+                // Own File: Reconstruct from SSS
+                const { reconstructKey } = await import("../../utils/shamir");
+
+                // Gather Shares from Distributed Storage
+                const s1 = JSON.parse(localStorage.getItem("vault_keys_share1") || "{}")[fileRec.cid];
+                const s2 = JSON.parse(sessionStorage.getItem("vault_keys_share2") || "{}")[fileRec.cid];
+                const s3 = JSON.parse(localStorage.getItem("vault_keys_share3") || "{}")[fileRec.cid];
+
+                const availableShares = [s1, s2, s3].filter(s => !!s);
+                console.log(`Found ${availableShares.length} shares for key reconstruction.`);
+
+                if (availableShares.length < 2) {
+                    alert("Access Denied: Insufficient key shares to reconstruct the key. (Zero-Trust Security)");
+                    throw new Error("Insufficient shares");
+                }
+
+                // Reconstruct
+                key = await reconstructKey(availableShares);
+
+            } else {
+                // Shared File: Use attached key (Simulated)
+                // Note: In a real SSS system, you'd share *shares*, but for this demo we use the sim layer.
+                if (!fileRec.keyJwk) throw new Error("Shared key missing");
+                key = await importKey(fileRec.keyJwk);
             }
-            const key = await importKey(keyJwk);
 
             // 3. Download Chunks
             const chunkPromises = manifest.chunks.map(async (chunkCid: string) => {
@@ -108,10 +123,23 @@ export default function Dashboard() {
     const handleShare = async () => {
         if (!sharingFile || !shareAddress || !account) return;
         try {
-            // 1. Get Key to share
-            const localKeys = JSON.parse(localStorage.getItem("vault_keys") || "{}");
-            const keyJwk = localKeys[sharingFile.cid];
-            if (!keyJwk) throw new Error("Key not found");
+            // 1. Get Key to share (Reconstruct first)
+            let keyJwk: JsonWebKey;
+
+            // Reconstruct logic for Sharing
+            const { reconstructKey } = await import("../../utils/shamir");
+            const s1 = JSON.parse(localStorage.getItem("vault_keys_share1") || "{}")[sharingFile.cid];
+            const s2 = JSON.parse(sessionStorage.getItem("vault_keys_share2") || "{}")[sharingFile.cid];
+            const s3 = JSON.parse(localStorage.getItem("vault_keys_share3") || "{}")[sharingFile.cid];
+            const availableShares = [s1, s2, s3].filter(s => !!s);
+
+            if (availableShares.length >= 2) {
+                const key = await reconstructKey(availableShares);
+                keyJwk = await exportKey(key);
+            } else {
+                // Fallback if legacy or error
+                throw new Error("Cannot reconstruct key for sharing");
+            }
 
             // 2. Share
             shareFile(sharingFile, account, shareAddress, keyJwk);

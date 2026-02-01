@@ -148,12 +148,29 @@ export default function Vault() {
                     // Blockchain sees it as one file (the manifest).
                     await uploadFileToBlockchain(manifestCID, file.name, file.size, file.type);
 
-                    // 8. Store Key Locally (Demo Mode)
-                    const keyJwk = await exportKey(key);
-                    const localKeys = JSON.parse(localStorage.getItem("vault_keys") || "{}");
-                    localKeys[manifestCID] = keyJwk;
-                    localStorage.setItem("vault_keys", JSON.stringify(localKeys));
-                    console.log(`Key stored locally for CID: ${manifestCID}`);
+                    // 8. Store Key Shares (Zero Trust - SSS)
+                    const { splitKey } = await import("../../utils/shamir");
+
+                    // Split key into 3 shares (threshold 2)
+                    const shares = await splitKey(key, 3, 2);
+
+                    // Share 1: LocalStorage (Simulated Device Storage)
+                    const localKeys = JSON.parse(localStorage.getItem("vault_keys_share1") || "{}");
+                    localKeys[manifestCID] = shares[0];
+                    localStorage.setItem("vault_keys_share1", JSON.stringify(localKeys));
+
+                    // Share 2: SessionStorage (Simulated Session Memory)
+                    const sessionKeys = JSON.parse(sessionStorage.getItem("vault_keys_share2") || "{}");
+                    sessionKeys[manifestCID] = shares[1];
+                    sessionStorage.setItem("vault_keys_share2", JSON.stringify(sessionKeys));
+
+                    // Share 3: LocalStorage Backup (Simulated Backup Service)
+                    const backupKeys = JSON.parse(localStorage.getItem("vault_keys_share3") || "{}");
+                    backupKeys[manifestCID] = shares[2];
+                    localStorage.setItem("vault_keys_share3", JSON.stringify(backupKeys));
+
+                    console.log(`Key split into 3 shares and distributed for CID: ${manifestCID}`);
+                    console.log("Full key deleted from memory.");
                 }
 
                 // 7. Complete

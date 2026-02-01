@@ -1,5 +1,17 @@
 [
   {
+    "id": "375ebcf1-9a21-40b3-9b46-4c3395a7a61b",
+    "name": "Minor Project IEEE.pdf",
+    "filename": "manifest.json",
+    "size": 301995,
+    "type": "application/pdf",
+    "uploadedAt": "2026-02-01T14:14:22.339Z",
+    "status": "Encrypted & Stored",
+    "cid": "QmbgKAv7mgphC7MHp9Ldu1HXiifryVETo23Kz3d887Z9Zz",
+    "ipfsGateway": "https://gateway.pinata.cloud/ipfs/",
+    "pinStatus": "Pinned to IPFS"
+  },
+  {
     "id": "bbf32bd0-3735-401d-8681-a28f021f3b10",
     "name": "cartoon-white-cat-pfp.jpeg",
     "filename": "manifest.json",

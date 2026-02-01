@@ -5,11 +5,12 @@ import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
 import { useWallet } from "@/context/WalletContext";
 import { motion, AnimatePresence } from "framer-motion";
-import { Menu, X, Wallet, ShieldCheck, Database, FileText, Share2, Settings } from "lucide-react";
+import { Menu, X, Wallet, ShieldCheck, Database, FileText, Share2, Settings, UploadCloud } from "lucide-react";
 import clsx from "clsx";
 
 const navLinks = [
     { name: "Dashboard", href: "/dashboard", icon: Database },
+    { name: "Upload", href: "/upload", icon: UploadCloud },
     { name: "Vault", href: "/vault", icon: FileText },
     { name: "Shared", href: "/shared", icon: Share2 },
     { name: "Audit", href: "/audit", icon: ShieldCheck },

@@ -1,193 +1,184 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { Upload, File as FileIcon, X, CheckCircle, Loader2 } from "lucide-react";
+import { useWallet } from "@/context/WalletContext";
+import { useEffect, useState } from "react";
+import { motion } from "framer-motion";
+import { HardDrive, File, Activity, ShieldCheck } from "lucide-react";
+import { Download, CheckCircle, Loader2, AlertTriangle, Share2 } from "lucide-react";
 import clsx from "clsx";
-
-// Mock Upload State
-interface UploadingFile {
-    name: string;
-    size: string;
-    progress: number;
-    status: "encrypting" | "sharding" | "uploading" | "confirming" | "complete";
-    totalChunks?: number; // Added for ChunkVisualizer
-}
-
-// Chunk Visualizer Component
-const ChunkVisualizer = ({ totalChunks, progress }: { totalChunks: number, progress: number }) => {
-    // Determine how many chunks are "complete" based on progress percentage
-    const completedCount = Math.floor((progress / 100) * totalChunks);
-
-    return (
-        <div className="w-full mt-3">
-            <div className="flex justify-between text-xs text-white/40 mb-1">
-                <span>Parallel Upload</span>
-                <span>{Math.min(100, Math.round(progress))}%</span>
-            </div>
-            <div className="flex gap-1 flex-wrap">
-                {Array.from({ length: totalChunks }).map((_, i) => (
-                    <motion.div
-                        key={i}
-                        className={clsx(
-                            "h-2 rounded-sm flex-1 min-w-[4px] transition-colors duration-300",
-                            i < completedCount ? "bg-vault-cyan shadow-[0_0_5px_cyan]" : "bg-white/10"
-                        )}
-                        initial={{ scaleY: 0 }}
-                        animate={{ scaleY: 1 }}
-                        transition={{ delay: i * 0.05 }}
-                    />
-                ))}
-            </div>
-        </div>
-    );
-};
+import { getUserFiles } from "../../../utils/blockchain/vaultiumStorage";
+import { decryptFile, importKey, exportKey } from "../../utils/encryption";
+import { computeFileHash } from "../../utils/hash";
+import { shareFile, getSharedFiles } from "../../utils/sharing";
 
 export default function Vault() {
-    const [activeUploads, setActiveUploads] = useState<UploadingFile[]>([]);
-    const [isDragOver, setIsDragOver] = useState(false);
+    const { account } = useWallet();
+    const [files, setFiles] = useState<any[]>([]);
+    const [downloading, setDownloading] = useState<string | null>(null);
+    const [verificationStatus, setVerificationStatus] = useState<{ [key: string]: 'verified' | 'tampered' | null }>({});
 
-    const handleUpload = useCallback(async (files: FileList | null) => {
-        if (!files) return;
+    // Share Modal State
+    const [sharingFile, setSharingFile] = useState<any | null>(null);
+    const [shareAddress, setShareAddress] = useState("");
 
-        const filesArray = Array.from(files);
+    const handleDownload = async (fileRec: any) => {
+        if (downloading) return;
+        setDownloading(fileRec.cid);
+        setVerificationStatus(prev => ({ ...prev, [fileRec.cid]: null }));
 
-        // Add to active uploads with initial state
-        const newUploads: UploadingFile[] = filesArray.map(file => ({
-            name: file.name,
-            size: (file.size / (1024 * 1024)).toFixed(2) + " MB",
-            progress: 0,
-            status: "encrypting",
-        }));
+        try {
+            console.log(`Starting download for ${fileRec.name} (${fileRec.cid})`);
 
-        setActiveUploads(prev => [...prev, ...newUploads]);
+            // 1. Fetch Manifest
+            const gateway = process.env.NEXT_PUBLIC_IPFS_GATEWAY || "https://gateway.pinata.cloud/ipfs/";
+            const manifestRes = await fetch(`${gateway}${fileRec.cid}`);
+            if (!manifestRes.ok) throw new Error("Failed to fetch manifest");
+            const manifest = await manifestRes.json();
 
-        for (const file of filesArray) {
-            try {
-                // Get Chunk Size from Settings
-                let chunkSizeVar = parseInt(process.env.NEXT_PUBLIC_DEFAULT_CHUNK_SIZE || "1048576");
-                if (typeof window !== "undefined") {
-                    const saved = localStorage.getItem("vaultium_chunk_size");
-                    if (saved) chunkSizeVar = parseInt(saved);
-                }
-                const chunkSize = chunkSizeVar;
+            // 2. Get Key
+            // If shared, the key is attached to the record. If own file, get from local storage.
+            let key: CryptoKey;
 
-                // 0. Compute Hash (Integrity)
-                const { computeFileHash } = await import("../../utils/hash");
-                const fileHash = await computeFileHash(file);
-                console.log(`Hash computed for ${file.name}: ${fileHash}`);
+            if (!fileRec.isShared) {
+                // Own File: Reconstruct from SSS
+                const { reconstructKey } = await import("../../utils/shamir");
 
-                // 1. Generate Key
-                const { generateKey, encryptFile, exportKey } = await import("../../utils/encryption");
-                const key = await generateKey();
+                // Gather Shares from Distributed Storage
+                const s1 = JSON.parse(localStorage.getItem("vault_keys_share1") || "{}")[fileRec.cid];
+                const s2 = JSON.parse(sessionStorage.getItem("vault_keys_share2") || "{}")[fileRec.cid];
+                const s3 = JSON.parse(localStorage.getItem("vault_keys_share3") || "{}")[fileRec.cid];
 
-                // 2. Encrypt
-                setActiveUploads(prev => prev.map(u => u.name === file.name ? { ...u, status: "encrypting", progress: 10 } : u));
-                const encryptedBlob = await import("../../utils/encryption").then(m => m.encryptFile(file, key));
+                const availableShares = [s1, s2, s3].filter(s => !!s);
+                console.log(`Found ${availableShares.length} shares for key reconstruction.`);
 
-                // 3. Chunking
-                setActiveUploads(prev => prev.map(u => u.name === file.name ? { ...u, status: "sharding", progress: 30 } : u));
-                const { createChunks, createManifest } = await import("../../utils/chunking");
-                const chunks = createChunks(encryptedBlob, chunkSize);
-                console.log(`Split ${file.name} into ${chunks.length} chunks (Size: ${chunkSize})`);
-
-                // 4. Parallel Upload
-                setActiveUploads(prev => prev.map(u => u.name === file.name ? { ...u, status: "uploading", progress: 40, totalChunks: chunks.length } : u));
-
-                let completedChunks = 0;
-                const totalChunks = chunks.length;
-
-                const uploadPromises = chunks.map(async (chunk, index) => {
-                    const formData = new FormData();
-                    // Append index to name to avoid collisions in simple storage if needed, though API handles uniqueness locally.
-                    // Important: We're uploading raw chunks.
-                    formData.append("file", chunk, `${file.name}.part${index}`);
-
-                    console.log(`Uploading chunk ${index + 1}/${totalChunks}`);
-
-                    const res = await fetch("/api/upload", {
-                        method: "POST",
-                        body: formData,
-                    });
-
-                    if (!res.ok) throw new Error(`Chunk ${index} upload failed`);
-                    const data = await res.json();
-
-                    completedChunks++;
-                    // Update progress: 40% -> 90% range for uploads
-                    const currentProgress = 40 + ((completedChunks / totalChunks) * 50);
-                    setActiveUploads(prev => prev.map(u => u.name === file.name ? { ...u, progress: currentProgress } : u));
-
-                    return data.cid;
-                });
-
-                const chunkCids = await Promise.all(uploadPromises);
-                console.log("All chunks uploaded:", chunkCids);
-
-                // 5. Create & Upload Manifest
-                setActiveUploads(prev => prev.map(u => u.name === file.name ? { ...u, status: "confirming", progress: 95 } : u));
-
-                const manifestFile = createManifest(file.name, file.size, file.type, chunkCids, chunkSize, fileHash);
-                const manifestFormData = new FormData();
-                manifestFormData.append("file", manifestFile);
-
-                const manifestRes = await fetch("/api/upload", {
-                    method: "POST",
-                    body: manifestFormData,
-                });
-
-                if (!manifestRes.ok) throw new Error("Manifest upload failed");
-                const manifestData = await manifestRes.json();
-                const manifestCID = manifestData.cid;
-                console.log("Manifest uploaded:", manifestCID);
-
-                // 6. Store on Blockchain
-                if (manifestCID) {
-                    const { uploadFileToBlockchain } = await import("../../../utils/blockchain/vaultiumStorage");
-                    // Store the MANIFEST CID, not the file content CID.
-                    // Blockchain sees it as one file (the manifest).
-                    await uploadFileToBlockchain(manifestCID, file.name, file.size, file.type);
-
-                    // 8. Store Key Shares (Zero Trust - SSS)
-                    const { splitKey } = await import("../../utils/shamir");
-
-                    // Split key into 3 shares (threshold 2)
-                    const shares = await splitKey(key, 3, 2);
-
-                    // Share 1: LocalStorage (Simulated Device Storage)
-                    const localKeys = JSON.parse(localStorage.getItem("vault_keys_share1") || "{}");
-                    localKeys[manifestCID] = shares[0];
-                    localStorage.setItem("vault_keys_share1", JSON.stringify(localKeys));
-
-                    // Share 2: SessionStorage (Simulated Session Memory)
-                    const sessionKeys = JSON.parse(sessionStorage.getItem("vault_keys_share2") || "{}");
-                    sessionKeys[manifestCID] = shares[1];
-                    sessionStorage.setItem("vault_keys_share2", JSON.stringify(sessionKeys));
-
-                    // Share 3: LocalStorage Backup (Simulated Backup Service)
-                    const backupKeys = JSON.parse(localStorage.getItem("vault_keys_share3") || "{}");
-                    backupKeys[manifestCID] = shares[2];
-                    localStorage.setItem("vault_keys_share3", JSON.stringify(backupKeys));
-
-                    console.log(`Key split into 3 shares and distributed for CID: ${manifestCID}`);
-                    console.log("Full key deleted from memory.");
+                if (availableShares.length < 2) {
+                    alert("Access Denied: Insufficient key shares to reconstruct the key. (Zero-Trust Security)");
+                    throw new Error("Insufficient shares");
                 }
 
-                // 7. Complete
-                setActiveUploads(prev => prev.map(u => u.name === file.name ? { ...u, status: "complete", progress: 100 } : u));
+                // Reconstruct
+                key = await reconstructKey(availableShares);
 
-            } catch (error) {
-                console.error("Error processing file:", file.name, error);
-                setActiveUploads(prev => prev.map(u => u.name === file.name ? { ...u, status: "complete", progress: 0 } : u));
+            } else {
+                // Shared File: Use attached key (Simulated)
+                if (!fileRec.keyJwk) throw new Error("Shared key missing");
+                key = await importKey(fileRec.keyJwk);
             }
-        }
-    }, []);
 
-    const handleDrop = (e: React.DragEvent) => {
-        e.preventDefault();
-        setIsDragOver(false);
-        handleUpload(e.dataTransfer.files);
+            // 3. Download Chunks
+            const chunkPromises = manifest.chunks.map(async (chunkCid: string) => {
+                const chunkRes = await fetch(`${gateway}${chunkCid}`);
+                if (!chunkRes.ok) throw new Error(`Failed to fetch chunk ${chunkCid}`);
+                return await chunkRes.blob();
+            });
+            const chunks = await Promise.all(chunkPromises);
+
+            // 4. Combine
+            const encryptedBlob = new Blob(chunks);
+
+            // 5. Decrypt
+            const decryptedBlob = await decryptFile(encryptedBlob, key);
+
+            // 6. Verify Integrity
+            if (manifest.hash) {
+                const computedHash = await computeFileHash(decryptedBlob);
+                if (computedHash === manifest.hash) {
+                    setVerificationStatus(prev => ({ ...prev, [fileRec.cid]: 'verified' }));
+                    console.log("Integrity Verified ✅");
+                } else {
+                    setVerificationStatus(prev => ({ ...prev, [fileRec.cid]: 'tampered' }));
+                    console.error("Integrity Check Failed ❌");
+                    alert("Warning: File hash mismatch! The file may have been tampered with.");
+                }
+            } else {
+                console.warn("No hash in manifest, skipping verification");
+            }
+
+            // 7. Download Trigger
+            const url = window.URL.createObjectURL(decryptedBlob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = fileRec.name; // Use original name
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+
+        } catch (error) {
+            console.error("Download failed:", error);
+            alert("Download/Decryption failed. See console.");
+        } finally {
+            setDownloading(null);
+        }
     };
+
+    const handleShare = async () => {
+        if (!sharingFile || !shareAddress || !account) return;
+        try {
+            // 1. Get Key to share (Reconstruct first)
+            let keyJwk: JsonWebKey;
+
+            // Reconstruct logic for Sharing
+            const { reconstructKey } = await import("../../utils/shamir");
+            const s1 = JSON.parse(localStorage.getItem("vault_keys_share1") || "{}")[sharingFile.cid];
+            const s2 = JSON.parse(sessionStorage.getItem("vault_keys_share2") || "{}")[sharingFile.cid];
+            const s3 = JSON.parse(localStorage.getItem("vault_keys_share3") || "{}")[sharingFile.cid];
+            const availableShares = [s1, s2, s3].filter(s => !!s);
+
+            if (availableShares.length >= 2) {
+                const key = await reconstructKey(availableShares);
+                keyJwk = await exportKey(key);
+            } else {
+                // Fallback if legacy or error
+                throw new Error("Cannot reconstruct key for sharing");
+            }
+
+            // 2. Share
+            shareFile(sharingFile, account, shareAddress, keyJwk);
+            alert(`File shared with ${shareAddress}`);
+            setSharingFile(null);
+            setShareAddress("");
+        } catch (error) {
+            console.error("Share failed", error);
+            alert("Share failed: Key not found or invalid address");
+        }
+    };
+
+    useEffect(() => {
+        const fetchFiles = async () => {
+            if (!account) return;
+            try {
+                // Use Blockchain Helper
+                const rawData = await getUserFiles();
+
+                if (Array.isArray(rawData)) {
+                    // Map FileMetadata to Dashboard properties
+                    const data = rawData.map(f => ({
+                        cid: f.cid,
+                        name: f.fileName,
+                        size: f.fileSize,
+                        uploadedAt: f.uploadTime * 1000, // s to ms
+                        type: f.fileType
+                    }));
+
+                    setFiles(data);
+
+                    // Fetch Shared Files
+                    const shared = getSharedFiles(account);
+                    if (shared.length > 0) {
+                        setFiles(prev => [...prev, ...shared]);
+                    }
+                }
+            } catch (error) {
+                console.error("Failed to fetch files:", error);
+            }
+        };
+
+        fetchFiles();
+        // Poll every 10 seconds
+        const interval = setInterval(fetchFiles, 10000);
+        return () => clearInterval(interval);
+    }, [account]);
 
     return (
         <div className="container mx-auto px-4 py-8 max-w-5xl">
@@ -196,91 +187,163 @@ export default function Vault() {
                 animate={{ opacity: 1, y: 0 }}
                 className="mb-8"
             >
-                <h1 className="text-3xl font-bold font-heading mb-2">Upload Vault</h1>
-                <p className="text-white/60">Securely encrypt, shard, and distribute your files.</p>
+                <h1 className="text-3xl font-bold font-heading mb-2">Vault Repository</h1>
+                <p className="text-white/60">Manage your encrypted files.</p>
             </motion.div>
 
-            {/* Drag & Drop Zone */}
-            <div
-                onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
-                onDragLeave={() => setIsDragOver(false)}
-                onDrop={handleDrop}
-                className={clsx(
-                    "relative border-2 border-dashed rounded-3xl p-12 text-center transition-all duration-300",
-                    isDragOver
-                        ? "border-vault-cyan bg-vault-cyan/10 scale-[1.01]"
-                        : "border-white/10 bg-white/5 hover:bg-white/10 hover:border-white/20"
-                )}
+            {/* Your Files List */}
+            <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.1 }}
+                className="glass-panel p-8 rounded-3xl"
             >
-                <div className="flex flex-col items-center gap-4 pointer-events-none">
-                    <div className="w-20 h-20 rounded-full bg-gradient-to-br from-vault-cyan to-vault-violet flex items-center justify-center shadow-2xl shadow-vault-cyan/20">
-                        <Upload size={32} className="text-white" />
-                    </div>
-                    <div>
-                        <h3 className="text-xl font-bold mb-1">Drag files here to upload</h3>
-                        <p className="text-white/50 text-sm">or click to browse from device</p>
+                <div className="flex items-center justify-between mb-6">
+                    <h3 className="text-xl font-bold font-heading">Files ({files.length})</h3>
+                    <div className="flex gap-2 text-sm text-white/40">
+                        <span className="flex items-center gap-1"><ShieldCheck size={14} /> Encrypted</span>
+                        <span className="flex items-center gap-1"><HardDrive size={14} /> IPFS</span>
                     </div>
                 </div>
-                <input
-                    type="file"
-                    multiple
-                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                    onChange={(e) => handleUpload(e.target.files)}
-                />
-            </div>
 
-            {/* Upload Progress List */}
-            <div className="mt-8 space-y-4">
-                <AnimatePresence>
-                    {activeUploads.map((file, idx) => (
-                        <motion.div
-                            key={idx}
-                            initial={{ opacity: 0, x: -20 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            className="glass-panel p-4 rounded-xl flex items-center gap-4"
-                        >
-                            <div className="p-3 bg-white/5 rounded-lg">
-                                <FileIcon size={24} className="text-vault-cyan" />
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                        <thead>
+                            <tr className="border-b border-white/10 text-white/40 text-sm">
+                                <th className="pb-4 pl-4 font-medium">Name</th>
+                                <th className="pb-4 font-medium">Size</th>
+                                <th className="pb-4 font-medium">Date</th>
+                                <th className="pb-4 font-medium">Status & Integrity</th>
+                                <th className="pb-4 pr-4 text-right">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {files.length === 0 ? (
+                                <tr>
+                                    <td colSpan={5} className="py-8 text-center text-white/30">
+                                        No files found in your vault.
+                                    </td>
+                                </tr>
+                            ) : (
+                                files.map((file) => (
+                                    <tr key={file.cid} className="group border-b border-white/5 last:border-0 hover:bg-white/5 transition-colors">
+                                        <td className="py-4 pl-4 font-medium flex items-center gap-3">
+                                            <div className="p-2 bg-vault-cyan/10 rounded-lg text-vault-cyan">
+                                                <File size={18} />
+                                            </div>
+                                            {file.name}
+                                            {file.isShared && (
+                                                <span className="text-[10px] uppercase px-1.5 py-0.5 bg-vault-violet/20 text-vault-violet rounded border border-vault-violet/30 ml-2 font-bold">
+                                                    Shared by {file.sharedBy.substring(0, 4)}...
+                                                </span>
+                                            )}
+                                        </td>
+                                        <td className="py-4 text-white/60 font-mono text-sm">
+                                            {(file.size / (1024 * 1024)).toFixed(2)} MB
+                                        </td>
+                                        <td className="py-4 text-white/60 text-sm">
+                                            {new Date(file.uploadedAt).toLocaleDateString()}
+                                        </td>
+                                        <td className="py-4">
+                                            <div className="flex flex-col gap-1 items-start">
+                                                {/* Status Indicators */}
+                                                <div className="flex gap-1">
+                                                    <span className="text-[10px] uppercase px-1.5 py-0.5 bg-white/10 rounded text-white/50 border border-white/5" title="Encrypted Local AES">ENC</span>
+                                                    <span className="text-[10px] uppercase px-1.5 py-0.5 bg-white/10 rounded text-white/50 border border-white/5" title="Stored on IPFS">IPFS</span>
+                                                    <span className="text-[10px] uppercase px-1.5 py-0.5 bg-white/10 rounded text-white/50 border border-white/5" title="Verified on Blockchain">CHAIN</span>
+                                                </div>
+
+                                                {/* Integrity Badge */}
+                                                {verificationStatus[file.cid] === 'verified' && (
+                                                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-vault-emerald/10 text-vault-emerald text-xs font-bold border border-vault-emerald/20">
+                                                        <CheckCircle size={12} /> Verified
+                                                    </span>
+                                                )}
+                                                {verificationStatus[file.cid] === 'tampered' && (
+                                                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-red-500/10 text-red-500 text-xs font-bold border border-red-500/20">
+                                                        <AlertTriangle size={12} /> Tampered
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </td>
+                                        <td className="py-4 pr-4 text-right flex justify-end gap-2">
+                                            {!file.isShared && (
+                                                <button
+                                                    onClick={() => setSharingFile(file)}
+                                                    className="p-2 bg-white/5 hover:bg-white/10 text-white rounded-lg transition-all border border-white/5 hover:border-vault-violet/30"
+                                                    title="Share Access"
+                                                >
+                                                    <Share2 size={16} />
+                                                </button>
+                                            )}
+                                            <button
+                                                onClick={() => handleDownload(file)}
+                                                disabled={downloading === file.cid}
+                                                className="px-4 py-2 bg-white/5 hover:bg-white/10 text-white rounded-lg text-sm font-bold transition-all border border-white/5 hover:border-vault-cyan/30 flex items-center gap-2 ml-auto"
+                                            >
+                                                {downloading === file.cid ? (
+                                                    <Loader2 size={16} className="animate-spin text-vault-cyan" />
+                                                ) : (
+                                                    <Download size={16} />
+                                                )}
+                                                {downloading === file.cid ? "Decrypting..." : "Download"}
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            </motion.div>
+
+            {/* Share Modal */}
+            {sharingFile && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="bg-black border border-white/10 p-6 rounded-2xl w-full max-w-md shadow-2xl"
+                    >
+                        <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+                            <Share2 className="text-vault-violet" /> Share File
+                        </h3>
+                        <p className="text-white/60 text-sm mb-4">
+                            Share <span className="text-white font-bold">{sharingFile.name}</span> with another wallet.
+                            They will be able to download and decrypt it.
+                        </p>
+
+                        <div className="space-y-4">
+                            <div>
+                                <label className="text-xs uppercase text-white/40 font-bold tracking-wider mb-2 block">Recipient Address</label>
+                                <input
+                                    type="text"
+                                    value={shareAddress}
+                                    onChange={(e) => setShareAddress(e.target.value)}
+                                    placeholder="0x..."
+                                    className="w-full bg-white/5 border border-white/10 text-white p-3 rounded-xl focus:border-vault-violet outline-none font-mono text-sm"
+                                />
                             </div>
 
-                            <div className="flex-1 min-w-0">
-                                <div className="flex justify-between text-sm mb-2">
-                                    <span className="font-medium truncate">{file.name}</span>
-                                    <span className="text-white/50">{file.size}</span>
-                                </div>
-
-                                {/* Progress Bar */}
-                                {file.status === "uploading" && file.totalChunks ? (
-                                    <ChunkVisualizer totalChunks={file.totalChunks} progress={file.progress} />
-                                ) : (
-                                    <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
-                                        <motion.div
-                                            className="h-full bg-gradient-to-r from-vault-cyan to-vault-violet"
-                                            initial={{ width: 0 }}
-                                            animate={{ width: `${file.progress}%` }}
-                                            transition={{ duration: 0.5 }}
-                                        />
-                                    </div>
-                                )}
-
-                                <div className="flex justify-between items-center mt-2 text-xs">
-                                    <span className="text-white/40 uppercase tracking-wider font-semibold flex items-center gap-2">
-                                        {file.status === "complete" ? (
-                                            <span className="text-vault-emerald flex items-center gap-1">
-                                                <CheckCircle size={12} /> Encrypted & Stored
-                                            </span>
-                                        ) : (
-                                            <span className="text-vault-cyan flex items-center gap-1">
-                                                <Loader2 size={12} className="animate-spin" /> {file.status}...
-                                            </span>
-                                        )}
-                                    </span>
-                                </div>
+                            <div className="flex justify-end gap-3 mt-6">
+                                <button
+                                    onClick={() => setSharingFile(null)}
+                                    className="px-4 py-2 text-white/60 hover:text-white text-sm font-bold"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleShare}
+                                    disabled={!shareAddress.startsWith("0x")}
+                                    className="px-6 py-2 bg-vault-violet hover:bg-vault-violet/80 text-white rounded-xl text-sm font-bold shadow-lg shadow-vault-violet/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    Share Access
+                                </button>
                             </div>
-                        </motion.div>
-                    ))}
-                </AnimatePresence>
-            </div>
+                        </div>
+                    </motion.div>
+                </div>
+            )}
         </div>
     );
 }

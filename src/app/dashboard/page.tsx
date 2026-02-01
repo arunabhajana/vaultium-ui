@@ -254,7 +254,7 @@ export default function Dashboard() {
                     </h3>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 relative z-10">
-                        <Link href="/vault" className="group glass-card p-6 rounded-2xl hover:bg-white/10 transition-all border border-white/5 hover:border-vault-cyan/30">
+                        <Link href="/upload" className="group glass-card p-6 rounded-2xl hover:bg-white/10 transition-all border border-white/5 hover:border-vault-cyan/30">
                             <div className="flex justify-between items-start mb-4">
                                 <div className="p-3 bg-vault-cyan/20 rounded-lg text-vault-cyan group-hover:scale-110 transition-transform">
                                     <UploadCloud size={24} />
@@ -338,7 +338,7 @@ export default function Dashboard() {
                                     </td>
                                 </tr>
                             ) : (
-                                files.map((file) => (
+                                files.slice(0, 5).map((file) => (
                                     <tr key={file.cid} className="group border-b border-white/5 last:border-0 hover:bg-white/5 transition-colors">
                                         <td className="py-4 pl-4 font-medium flex items-center gap-3">
                                             <div className="p-2 bg-vault-cyan/10 rounded-lg text-vault-cyan">

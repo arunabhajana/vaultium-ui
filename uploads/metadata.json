@@ -1,1 +1,14 @@
-﻿[]
+[
+  {
+    "id": "bbf32bd0-3735-401d-8681-a28f021f3b10",
+    "name": "cartoon-white-cat-pfp.jpeg",
+    "filename": "manifest.json",
+    "size": 117747,
+    "type": "image/jpeg",
+    "uploadedAt": "2026-02-01T13:43:56.976Z",
+    "status": "Encrypted & Stored",
+    "cid": "QmUhMB2daW3gHZq4PFFe5tHyxXaWpFxAt9A6GGWW5zRpKE",
+    "ipfsGateway": "https://gateway.pinata.cloud/ipfs/",
+    "pinStatus": "Pinned to IPFS"
+  }
+]

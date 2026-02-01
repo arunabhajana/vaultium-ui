@@ -24,7 +24,8 @@ export function createManifest(
     fileSize: number,
     mimeType: string,
     chunkCids: string[],
-    chunkSize: number = CHUNK_SIZE
+    chunkSize: number = CHUNK_SIZE,
+    hash?: string // Added SHA-256 hash
 ): File {
     const manifest = {
         name: fileName,
@@ -32,6 +33,7 @@ export function createManifest(
         type: mimeType,
         chunkSize: chunkSize,
         chunks: chunkCids,
+        hash: hash, // Store hash in manifest
         uploadedAt: new Date().toISOString(),
     };
 

@@ -65,14 +65,21 @@ export default function Vault() {
         for (const file of filesArray) {
             try {
                 // Get Chunk Size from Settings
-                let chunkSize = parseInt(process.env.NEXT_PUBLIC_DEFAULT_CHUNK_SIZE || "1048576");
+                let chunkSizeVar = parseInt(process.env.NEXT_PUBLIC_DEFAULT_CHUNK_SIZE || "1048576");
                 if (typeof window !== "undefined") {
                     const saved = localStorage.getItem("vaultium_chunk_size");
-                    if (saved) chunkSize = parseInt(saved);
+                    if (saved) chunkSizeVar = parseInt(saved);
                 }
+                const chunkSize = chunkSizeVar;
+
+                // 0. Compute Hash (Integrity)
+                const { computeFileHash } = await import("../../utils/hash");
+                const fileHash = await computeFileHash(file);
+                console.log(`Hash computed for ${file.name}: ${fileHash}`);
 
                 // 1. Generate Key
-                const key = await import("../../utils/encryption").then(m => m.generateKey());
+                const { generateKey, encryptFile, exportKey } = await import("../../utils/encryption");
+                const key = await generateKey();
 
                 // 2. Encrypt
                 setActiveUploads(prev => prev.map(u => u.name === file.name ? { ...u, status: "encrypting", progress: 10 } : u));
@@ -120,7 +127,7 @@ export default function Vault() {
                 // 5. Create & Upload Manifest
                 setActiveUploads(prev => prev.map(u => u.name === file.name ? { ...u, status: "confirming", progress: 95 } : u));
 
-                const manifestFile = createManifest(file.name, file.size, file.type, chunkCids, chunkSize);
+                const manifestFile = createManifest(file.name, file.size, file.type, chunkCids, chunkSize, fileHash);
                 const manifestFormData = new FormData();
                 manifestFormData.append("file", manifestFile);
 
@@ -136,10 +143,17 @@ export default function Vault() {
 
                 // 6. Store on Blockchain
                 if (manifestCID) {
-                    const { uploadFileToBlockchain } = await import("../../../utils/blockchain/vaultiumStorage");
+                    const { uploadFileToBlockchain } = await import("../../utils/blockchainHelper");
                     // Store the MANIFEST CID, not the file content CID.
                     // Blockchain sees it as one file (the manifest).
                     await uploadFileToBlockchain(manifestCID, file.name, file.size, file.type);
+
+                    // 8. Store Key Locally (Demo Mode)
+                    const keyJwk = await exportKey(key);
+                    const localKeys = JSON.parse(localStorage.getItem("vault_keys") || "{}");
+                    localKeys[manifestCID] = keyJwk;
+                    localStorage.setItem("vault_keys", JSON.stringify(localKeys));
+                    console.log(`Key stored locally for CID: ${manifestCID}`);
                 }
 
                 // 7. Complete

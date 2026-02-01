@@ -4,8 +4,12 @@ import { useWallet } from "@/context/WalletContext";
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { HardDrive, File, Activity, UploadCloud, ShieldCheck, ArrowUpRight } from "lucide-react";
+import { Download, Lock, CheckCircle, XCircle, Loader2, AlertTriangle } from "lucide-react";
 import Link from "next/link";
 import clsx from "clsx";
+import { getUserFiles } from "../../utils/blockchainHelper";
+import { decryptFile, importKey } from "../../utils/encryption";
+import { computeFileHash } from "../../utils/hash";
 
 export default function Dashboard() {
     const { account } = useWallet();
@@ -16,12 +20,85 @@ export default function Dashboard() {
         { label: "Total Files", value: "0", icon: File, color: "text-vault-violet", bg: "bg-vault-violet/10" },
         { label: "Storage Health", value: "100%", icon: Activity, color: "text-vault-emerald", bg: "bg-vault-emerald/10" },
     ]);
+    const [downloading, setDownloading] = useState<string | null>(null);
+    const [verificationStatus, setVerificationStatus] = useState<{ [key: string]: 'verified' | 'tampered' | null }>({});
+
+    const handleDownload = async (fileRec: any) => {
+        if (downloading) return;
+        setDownloading(fileRec.cid);
+        setVerificationStatus(prev => ({ ...prev, [fileRec.cid]: null }));
+
+        try {
+            console.log(`Starting download for ${fileRec.name} (${fileRec.cid})`);
+
+            // 1. Fetch Manifest
+            const gateway = process.env.NEXT_PUBLIC_IPFS_GATEWAY || "https://gateway.pinata.cloud/ipfs/";
+            const manifestRes = await fetch(`${gateway}${fileRec.cid}`);
+            if (!manifestRes.ok) throw new Error("Failed to fetch manifest");
+            const manifest = await manifestRes.json();
+
+            // 2. Get Key
+            const localKeys = JSON.parse(localStorage.getItem("vault_keys") || "{}");
+            const keyJwk = localKeys[fileRec.cid];
+            if (!keyJwk) {
+                alert("Decryption Key not found on this device! Cannot decrypt.");
+                throw new Error("Key missing");
+            }
+            const key = await importKey(keyJwk);
+
+            // 3. Download Chunks
+            const chunkPromises = manifest.chunks.map(async (chunkCid: string) => {
+                const chunkRes = await fetch(`${gateway}${chunkCid}`);
+                if (!chunkRes.ok) throw new Error(`Failed to fetch chunk ${chunkCid}`);
+                return await chunkRes.blob();
+            });
+            const chunks = await Promise.all(chunkPromises);
+
+            // 4. Combine
+            const encryptedBlob = new Blob(chunks);
+
+            // 5. Decrypt
+            const decryptedBlob = await decryptFile(encryptedBlob, key);
+
+            // 6. Verify Integrity
+            if (manifest.hash) {
+                const computedHash = await computeFileHash(decryptedBlob);
+                if (computedHash === manifest.hash) {
+                    setVerificationStatus(prev => ({ ...prev, [fileRec.cid]: 'verified' }));
+                    console.log("Integrity Verified ✅");
+                } else {
+                    setVerificationStatus(prev => ({ ...prev, [fileRec.cid]: 'tampered' }));
+                    console.error("Integrity Check Failed ❌");
+                    alert("Warning: File hash mismatch! The file may have been tampered with.");
+                }
+            } else {
+                console.warn("No hash in manifest, skipping verification");
+            }
+
+            // 7. Download Trigger
+            const url = window.URL.createObjectURL(decryptedBlob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = fileRec.name; // Use original name
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+
+        } catch (error) {
+            console.error("Download failed:", error);
+            alert("Download/Decryption failed. See console.");
+        } finally {
+            setDownloading(null);
+        }
+    };
 
     useEffect(() => {
         const fetchFiles = async () => {
+            if (!account) return;
             try {
-                const res = await fetch("/api/files");
-                const data = await res.json();
+                // Use Blockchain Helper
+                const data = await getUserFiles(account);
 
                 if (Array.isArray(data)) {
                     setFiles(data);
@@ -37,7 +114,9 @@ export default function Dashboard() {
                     ]);
 
                     // Update Recent Activity (Map files to activity format)
-                    const activity = data.slice(0, 5).map(file => ({
+                    // Sort by uploadedAt desc
+                    const sorted = [...data].sort((a, b) => b.uploadedAt - a.uploadedAt);
+                    const activity = sorted.slice(0, 5).map(file => ({
                         action: `Uploaded '${file.name}'`,
                         time: new Date(file.uploadedAt).toLocaleString(),
                         status: "Success"
@@ -50,10 +129,10 @@ export default function Dashboard() {
         };
 
         fetchFiles();
-        // Poll every 5 seconds to keep updated without refresh
-        const interval = setInterval(fetchFiles, 5000);
+        // Poll every 10 seconds
+        const interval = setInterval(fetchFiles, 10000);
         return () => clearInterval(interval);
-    }, []);
+    }, [account]);
 
     return (
         <div className="container mx-auto px-4 py-8">
@@ -150,6 +229,89 @@ export default function Dashboard() {
                     </div>
                 </motion.div>
             </div>
+
+            {/* Your Files List */}
+            <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.5 }}
+                className="glass-panel p-8 rounded-3xl"
+            >
+                <div className="flex items-center justify-between mb-6">
+                    <h3 className="text-xl font-bold font-heading">Your Vault</h3>
+                    <div className="flex gap-2 text-sm text-white/40">
+                        <span className="flex items-center gap-1"><ShieldCheck size={14} /> Encrypted</span>
+                        <span className="flex items-center gap-1"><HardDrive size={14} /> IPFS</span>
+                    </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                        <thead>
+                            <tr className="border-b border-white/10 text-white/40 text-sm">
+                                <th className="pb-4 pl-4 font-medium">Name</th>
+                                <th className="pb-4 font-medium">Size</th>
+                                <th className="pb-4 font-medium">Date</th>
+                                <th className="pb-4 font-medium">Integrity</th>
+                                <th className="pb-4 pr-4 text-right">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {files.length === 0 ? (
+                                <tr>
+                                    <td colSpan={5} className="py-8 text-center text-white/30">
+                                        No files found in your vault. Upload some!
+                                    </td>
+                                </tr>
+                            ) : (
+                                files.map((file) => (
+                                    <tr key={file.cid} className="group border-b border-white/5 last:border-0 hover:bg-white/5 transition-colors">
+                                        <td className="py-4 pl-4 font-medium flex items-center gap-3">
+                                            <div className="p-2 bg-vault-cyan/10 rounded-lg text-vault-cyan">
+                                                <File size={18} />
+                                            </div>
+                                            {file.name}
+                                        </td>
+                                        <td className="py-4 text-white/60 font-mono text-sm">
+                                            {(file.size / (1024 * 1024)).toFixed(2)} MB
+                                        </td>
+                                        <td className="py-4 text-white/60 text-sm">
+                                            {new Date(file.uploadedAt).toLocaleDateString()}
+                                        </td>
+                                        <td className="py-4">
+                                            {verificationStatus[file.cid] === 'verified' && (
+                                                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-vault-emerald/10 text-vault-emerald text-xs font-bold border border-vault-emerald/20">
+                                                    <CheckCircle size={12} /> Verified
+                                                </span>
+                                            )}
+                                            {verificationStatus[file.cid] === 'tampered' && (
+                                                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-red-500/10 text-red-500 text-xs font-bold border border-red-500/20">
+                                                    <AlertTriangle size={12} /> Tampered
+                                                </span>
+                                            )}
+                                            {!verificationStatus[file.cid] && <span className="text-white/20 text-xs">-</span>}
+                                        </td>
+                                        <td className="py-4 pr-4 text-right">
+                                            <button
+                                                onClick={() => handleDownload(file)}
+                                                disabled={downloading === file.cid}
+                                                className="px-4 py-2 bg-white/5 hover:bg-white/10 text-white rounded-lg text-sm font-bold transition-all border border-white/5 hover:border-vault-cyan/30 flex items-center gap-2 ml-auto"
+                                            >
+                                                {downloading === file.cid ? (
+                                                    <Loader2 size={16} className="animate-spin text-vault-cyan" />
+                                                ) : (
+                                                    <Download size={16} />
+                                                )}
+                                                {downloading === file.cid ? "Decrypting..." : "Download"}
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            </motion.div>
         </div>
     );
 }

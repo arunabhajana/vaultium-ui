@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ShieldCheck, Search, CheckCircle, Database, GitCommit, FileKey, X, Lock } from "lucide-react";
+import { ShieldCheck, Search, CheckCircle, Database, GitCommit, FileKey, X, Lock, AlertTriangle, XCircle } from "lucide-react";
 import clsx from "clsx";
 import { computeFileHash } from "../../utils/hash";
 import { generateOwnershipProof, verifyOwnershipProof } from "../../utils/zkProof";
@@ -184,12 +184,33 @@ export default function Audit() {
                         ) : "Generate & Verify ZK Proof"}
                     </button>
 
-                    {error && (
-                        <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm text-center font-medium">
-                            {error}
-                        </div>
-                    )}
                 </form>
+
+                <AnimatePresence>
+                    {error && (
+                        <motion.div
+                            initial={{ opacity: 0, y: -10, height: 0 }}
+                            animate={{ opacity: 1, y: 0, height: "auto" }}
+                            exit={{ opacity: 0, y: -10, height: 0 }}
+                            className="mt-6 overflow-hidden"
+                        >
+                            <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl flex items-start gap-3 text-red-400 relative">
+                                <AlertTriangle className="shrink-0 mt-0.5" size={20} />
+                                <div className="flex-1">
+                                    <h4 className="font-bold text-sm mb-1">Proof Generation Failed</h4>
+                                    <p className="text-sm opacity-90">{error}</p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setError(null)}
+                                    className="p-1 hover:bg-white/10 rounded-lg transition-colors"
+                                >
+                                    <XCircle size={18} />
+                                </button>
+                            </div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
 
                 <AnimatePresence>
                     {auditResult && (

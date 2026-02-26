@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Upload, File as FileIcon, X, CheckCircle, Loader2 } from "lucide-react";
+import { Upload, File as FileIcon, X, CheckCircle, Loader2, AlertTriangle } from "lucide-react";
 import clsx from "clsx";
 
 // Mock Upload State
@@ -10,8 +10,9 @@ interface UploadingFile {
     name: string;
     size: string;
     progress: number;
-    status: "encrypting" | "sharding" | "uploading" | "confirming" | "complete";
+    status: "encrypting" | "sharding" | "uploading" | "confirming" | "complete" | "error";
     totalChunks?: number; // Added for ChunkVisualizer
+    errorMessage?: string; // New field for error display
 }
 
 // Chunk Visualizer Component
@@ -178,7 +179,16 @@ export default function UploadPage() {
 
             } catch (error) {
                 console.error("Error processing file:", file.name, error);
-                setActiveUploads(prev => prev.map(u => u.name === file.name ? { ...u, status: "complete", progress: 0 } : u));
+
+                // Parse the error conditionally by checking if in browser to avoid import errors
+                const { parseBlockchainError } = await import("../../utils/errors");
+                const errorMessage = parseBlockchainError(error);
+
+                setActiveUploads(prev => prev.map(u =>
+                    u.name === file.name
+                        ? { ...u, status: "error", progress: 0, errorMessage }
+                        : u
+                ));
             }
         }
     }, []);
@@ -249,8 +259,13 @@ export default function UploadPage() {
                                     <span className="text-white/50">{file.size}</span>
                                 </div>
 
-                                {/* Progress Bar */}
-                                {file.status === "uploading" && file.totalChunks ? (
+                                {/* Progress Bar or Error Display */}
+                                {file.status === "error" ? (
+                                    <div className="mt-2 text-sm text-red-400 bg-red-500/10 border border-red-500/20 p-2 rounded-lg flex items-start gap-2">
+                                        <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+                                        <span>{file.errorMessage || "Upload failed."}</span>
+                                    </div>
+                                ) : file.status === "uploading" && file.totalChunks ? (
                                     <ChunkVisualizer totalChunks={file.totalChunks} progress={file.progress} />
                                 ) : (
                                     <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
@@ -268,6 +283,10 @@ export default function UploadPage() {
                                         {file.status === "complete" ? (
                                             <span className="text-vault-emerald flex items-center gap-1">
                                                 <CheckCircle size={12} /> Encrypted & Stored
+                                            </span>
+                                        ) : file.status === "error" ? (
+                                            <span className="text-red-400 flex items-center gap-1">
+                                                <X size={12} /> Failed
                                             </span>
                                         ) : (
                                             <span className="text-vault-cyan flex items-center gap-1">

@@ -2,9 +2,9 @@
 
 import { useWallet } from "@/context/WalletContext";
 import { useEffect, useState } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { HardDrive, File, Activity, ShieldCheck } from "lucide-react";
-import { Download, CheckCircle, Loader2, AlertTriangle, Share2 } from "lucide-react";
+import { Download, CheckCircle, Loader2, AlertTriangle, Share2, XCircle, Copy } from "lucide-react";
 import clsx from "clsx";
 import { getUserFiles } from "../../../utils/blockchain/vaultiumStorage";
 import { decryptFile, importKey, exportKey } from "../../utils/encryption";
@@ -20,6 +20,9 @@ export default function Vault() {
     // Share Modal State
     const [sharingFile, setSharingFile] = useState<any | null>(null);
     const [shareAddress, setShareAddress] = useState("");
+
+    // Global Error State
+    const [globalError, setGlobalError] = useState<string | null>(null);
 
     const handleDownload = async (fileRec: any) => {
         if (downloading) return;
@@ -106,7 +109,8 @@ export default function Vault() {
 
         } catch (error) {
             console.error("Download failed:", error);
-            alert("Download/Decryption failed. See console.");
+            const { parseBlockchainError } = await import("../../utils/errors");
+            setGlobalError(parseBlockchainError(error));
         } finally {
             setDownloading(null);
         }
@@ -135,12 +139,13 @@ export default function Vault() {
 
             // 2. Share
             shareFile(sharingFile, account, shareAddress, keyJwk);
-            alert(`File shared with ${shareAddress}`);
+            // We could use a toast here ideally, but sticking to prompt to not break things too much. Or just clear state. Let's just clear for now, could add success banner later.
             setSharingFile(null);
             setShareAddress("");
         } catch (error) {
             console.error("Share failed", error);
-            alert("Share failed: Key not found or invalid address");
+            const { parseBlockchainError } = await import("../../utils/errors");
+            setGlobalError(parseBlockchainError(error));
         }
     };
 
@@ -191,6 +196,30 @@ export default function Vault() {
                 <p className="text-white/60">Manage your encrypted files.</p>
             </motion.div>
 
+            {/* Global Error Banner */}
+            <AnimatePresence>
+                {globalError && (
+                    <motion.div
+                        initial={{ opacity: 0, y: -20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -20 }}
+                        className="mb-8 p-4 bg-red-500/10 border border-red-500/20 rounded-xl flex items-start gap-3 text-red-400 relative"
+                    >
+                        <AlertTriangle className="shrink-0 mt-0.5" size={20} />
+                        <div className="flex-1">
+                            <h4 className="font-bold text-sm mb-1">Transaction Failed</h4>
+                            <p className="text-sm opacity-90">{globalError}</p>
+                        </div>
+                        <button
+                            onClick={() => setGlobalError(null)}
+                            className="p-1 hover:bg-white/10 rounded-lg transition-colors"
+                        >
+                            <XCircle size={18} />
+                        </button>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
             {/* Your Files List */}
             <motion.div
                 initial={{ opacity: 0, y: 20 }}
@@ -227,16 +256,30 @@ export default function Vault() {
                             ) : (
                                 files.map((file) => (
                                     <tr key={file.cid} className="group border-b border-white/5 last:border-0 hover:bg-white/5 transition-colors">
-                                        <td className="py-4 pl-4 font-medium flex items-center gap-3">
-                                            <div className="p-2 bg-vault-cyan/10 rounded-lg text-vault-cyan">
-                                                <File size={18} />
+                                        <td className="py-4 pl-4">
+                                            <div className="flex flex-col gap-1">
+                                                <div className="flex items-center gap-3 font-medium">
+                                                    <div className="p-2 bg-vault-cyan/10 rounded-lg text-vault-cyan">
+                                                        <File size={18} />
+                                                    </div>
+                                                    <span>{file.name}</span>
+                                                    {file.isShared && (
+                                                        <span className="text-[10px] uppercase px-1.5 py-0.5 bg-vault-violet/20 text-vault-violet rounded border border-vault-violet/30 font-bold">
+                                                            Shared by {file.sharedBy.substring(0, 4)}...
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <div className="flex items-center gap-2 pl-[42px] text-white/40 text-[10px] font-mono mt-1">
+                                                    <span>CID: {file.cid.substring(0, 20)}...</span>
+                                                    <button
+                                                        onClick={() => navigator.clipboard.writeText(file.cid)}
+                                                        className="hover:text-vault-cyan transition-colors"
+                                                        title="Copy Full IPFS CID"
+                                                    >
+                                                        <Copy size={12} />
+                                                    </button>
+                                                </div>
                                             </div>
-                                            {file.name}
-                                            {file.isShared && (
-                                                <span className="text-[10px] uppercase px-1.5 py-0.5 bg-vault-violet/20 text-vault-violet rounded border border-vault-violet/30 ml-2 font-bold">
-                                                    Shared by {file.sharedBy.substring(0, 4)}...
-                                                </span>
-                                            )}
                                         </td>
                                         <td className="py-4 text-white/60 font-mono text-sm">
                                             {(file.size / (1024 * 1024)).toFixed(2)} MB

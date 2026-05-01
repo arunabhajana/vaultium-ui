@@ -16,6 +16,7 @@ export function ValidationDashboard() {
     // 1. Performance State
     const [perfStatus, setPerfStatus] = useState<"idle" | "running" | "done" | "error">("idle");
     const [perfMetrics, setPerfMetrics] = useState({ encrypt: 0, upload: 0, retrieve: 0, decrypt: 0 });
+    const [perfFileSize, setPerfFileSize] = useState<number>(1);
 
     // 2. Security State
     const [secStatus, setSecStatus] = useState<"idle" | "running" | "done" | "error">("idle");
@@ -42,11 +43,11 @@ export function ValidationDashboard() {
     const runPerformanceTest = async () => {
         setPerfStatus("running");
         try {
-            // Generate a 1MB dummy file
-            const dummyData = new Uint8Array(1024 * 1024);
+            // Generate a dummy file based on selected size
+            const dummyData = new Uint8Array(perfFileSize * 1024 * 1024);
             // Fill with some data
             for(let i=0; i<dummyData.length; i++) dummyData[i] = i % 256;
-            const file = new File([dummyData], "benchmark-1mb.bin", { type: "application/octet-stream" });
+            const file = new File([dummyData], `testing-${perfFileSize}mb.bin`, { type: "application/octet-stream" });
 
             // 1. Encrypt
             const startTime = performance.now();
@@ -57,7 +58,7 @@ export function ValidationDashboard() {
             // 2. Upload
             const upStart = performance.now();
             const formData = new FormData();
-            formData.append("file", new File([encryptedBlob], "benchmark-enc.bin"));
+            formData.append("file", new File([encryptedBlob], `testing-${perfFileSize}mb-enc.bin`));
             
             const upRes = await fetch("/api/upload", {
                 method: "POST",
@@ -243,9 +244,27 @@ export function ValidationDashboard() {
                         </div>
                         <h2 className="text-xl font-bold font-heading">Performance Validation</h2>
                     </div>
-                    <p className="text-white/60 text-sm mb-6 h-10">
-                        Measures the efficiency of encryption and IPFS networking (1MB chunk test).
+                    <p className="text-white/60 text-sm mb-4 h-10">
+                        Measures the efficiency of encryption and IPFS networking.
                     </p>
+
+                    <div className="flex gap-2 mb-6">
+                        {[1, 10, 25].map((size) => (
+                            <button
+                                key={size}
+                                onClick={() => setPerfFileSize(size)}
+                                disabled={perfStatus === "running"}
+                                className={clsx(
+                                    "flex-1 py-2 text-sm font-bold rounded-lg transition-colors border",
+                                    perfFileSize === size 
+                                        ? "bg-vault-cyan/20 text-vault-cyan border-vault-cyan/50" 
+                                        : "bg-white/5 text-white/50 border-white/10 hover:bg-white/10"
+                                )}
+                            >
+                                {size}MB
+                            </button>
+                        ))}
+                    </div>
                     
                     <button 
                         onClick={runPerformanceTest} disabled={perfStatus === "running"}
@@ -395,7 +414,7 @@ export function ValidationDashboard() {
                                         <h3 className="text-xl font-bold font-heading text-vault-cyan">Performance Testing</h3>
                                     </div>
                                     <p className="text-white/70 text-sm mb-4">
-                                        End-to-end metrics for a 1MB payload lifecycle.
+                                        End-to-end metrics for a {perfFileSize}MB payload lifecycle.
                                     </p>
                                     <div className="space-y-3">
                                         <MetricsRow label="Encryption Time" value={`${perfMetrics.encrypt.toFixed(2)} ms`} icon={<Lock size={16} />} highlight />

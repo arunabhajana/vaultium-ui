@@ -1,8 +1,13 @@
-import * as snarkjs from "snarkjs";
-
 interface ProofResult {
     proof: any;
     publicSignals: string[];
+}
+
+// Add global declaration for window.snarkjs
+declare global {
+    interface Window {
+        snarkjs: any;
+    }
 }
 
 /**
@@ -21,11 +26,15 @@ export async function generateOwnershipProof(fileHash: string, publicHash: strin
     const zkeyPath = "/circuits/ownership_final.zkey";
 
     try {
+        if (typeof window === "undefined" || !window.snarkjs) {
+            throw new Error("snarkjs not loaded");
+        }
+        
         // Try to fetch artifacts to see if they exist (Real Mode)
         const check = await fetch(wasmPath, { method: "HEAD" });
         if (check.ok) {
             console.log("Artifacts found, running Real ZK Proof...");
-            const { proof, publicSignals } = await snarkjs.groth16.fullProve(
+            const { proof, publicSignals } = await window.snarkjs.groth16.fullProve(
                 { fileHash: BigInt("0x" + fileHash), publicHash: BigInt("0x" + publicHash) },
                 wasmPath,
                 zkeyPath
@@ -35,7 +44,7 @@ export async function generateOwnershipProof(fileHash: string, publicHash: strin
             throw new Error("Artifacts missing, switching to simulation");
         }
     } catch (e) {
-        console.warn("Generating Simulation Proof (Demo Mode)");
+        console.warn("Generating Simulation Proof (Demo Mode)", e);
 
         // SIMULATION MODE (for Demo stability without WASM artifacts)
         // 1. Enforce the Constraint Logic in JS
@@ -70,16 +79,20 @@ export async function verifyOwnershipProof(proof: any, publicSignals: string[]):
     const vkeyPath = "/circuits/verification_key.json";
 
     try {
+        if (typeof window === "undefined" || !window.snarkjs) {
+            throw new Error("snarkjs not loaded");
+        }
+        
         const check = await fetch(vkeyPath, { method: "HEAD" });
         if (check.ok) {
             const vKeyReq = await fetch(vkeyPath);
             const vKey = await vKeyReq.json();
-            return await snarkjs.groth16.verify(vKey, publicSignals, proof);
+            return await window.snarkjs.groth16.verify(vKey, publicSignals, proof);
         } else {
             throw new Error("Artifacts missing");
         }
     } catch (e) {
-        console.warn("Running Simulation Verification (Demo Mode)");
+        console.warn("Running Simulation Verification (Demo Mode)", e);
         // Simulate Verification Delay
         await new Promise(resolve => setTimeout(resolve, 1000));
 

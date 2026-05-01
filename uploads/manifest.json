@@ -1,11 +1,11 @@
 {
-  "name": "WeMod Stardew Valley Setup.exe",
-  "size": 159576,
-  "type": "application/x-msdownload",
+  "name": "course-tracker.html",
+  "size": 40988,
+  "type": "text/html",
   "chunkSize": 1048576,
   "chunks": [
-    "QmYZmNoqUiqUDqexbCBNkVnqULbCafHtujdCM8N3xwF3GQ"
+    "QmSgPnxFnLS6R69jNVwcjDzjNrDPt4gdrphPApAsgwGPiZ"
   ],
-  "hash": "66682d894b26434a05452ecce62644c11afe92b9f9a207ae66e275d7b47ed1b9",
-  "uploadedAt": "2026-02-26T05:35:45.970Z"
+  "hash": "0c47935182165dba536fc0dc5ed2bf5a3635a92789d30828534243dcf48fc0b0",
+  "uploadedAt": "2026-05-01T03:12:22.593Z"
 }

@@ -62,6 +62,17 @@ export async function getUserFiles(): Promise<FileMetadata[]> {
 
         console.log(`Fetching files for user: ${signerAddress}`);
 
+        // Safety verification: Ensure contract is deployed on this network
+        const provider = contract.runner?.provider;
+        if (provider) {
+            const code = await provider.getCode(contract.target);
+            if (code === "0x") {
+                throw new Error(
+                    "Smart contract not found on this network. Please switch your MetaMask wallet to the correct network (e.g. Polygon Amoy or Localhost) where the Vaultium contract is deployed."
+                );
+            }
+        }
+
         // Call getUserFiles from the smart contract
         const files = await contract.getUserFiles(signerAddress);
 

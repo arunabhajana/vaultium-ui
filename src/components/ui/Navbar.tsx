@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
 import { useWallet } from "@/context/WalletContext";
 import { motion, AnimatePresence } from "framer-motion";
-import { Menu, X, Wallet, ShieldCheck, Database, FileText, Share2, Settings, UploadCloud } from "lucide-react";
+import { Menu, X, Wallet, ShieldCheck, Database, FileText, Share2, Settings, UploadCloud, Activity } from "lucide-react";
 import clsx from "clsx";
 
 const navLinks = [
@@ -13,6 +13,7 @@ const navLinks = [
     { name: "Upload", href: "/upload", icon: UploadCloud },
     { name: "Vault", href: "/vault", icon: FileText },
     { name: "Shared", href: "/shared", icon: Share2 },
+    { name: "Validation", href: "/validation", icon: Activity },
     { name: "Audit", href: "/audit", icon: ShieldCheck },
 ];
 
@@ -22,8 +23,10 @@ export function Navbar() {
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     const [isScrolled, setIsScrolled] = useState(false);
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+    const [mounted, setMounted] = useState(false);
 
     useEffect(() => {
+        setMounted(true);
         const handleScroll = () => {
             setIsScrolled(window.scrollY > 20);
         };
@@ -42,6 +45,12 @@ export function Navbar() {
             connectWallet();
         }
     };
+
+    if (!mounted) {
+        return (
+            <nav className="fixed top-0 w-full z-50 transition-all duration-300 border-b border-transparent bg-transparent py-6 h-20" />
+        );
+    }
 
     return (
         <nav
@@ -88,13 +97,13 @@ export function Navbar() {
                                 onClick={handleWalletClick}
                                 className={clsx(
                                     "px-5 py-2 rounded-full text-sm font-semibold transition-all duration-300 flex items-center gap-2 shadow-lg",
-                                    isConnected
+                                    mounted && isConnected
                                         ? "bg-vault-emerald/10 text-vault-emerald border border-vault-emerald/20 hover:bg-vault-emerald/20"
                                         : "bg-white text-black hover:shadow-[0_0_20px_rgba(255,255,255,0.4)]"
                                 )}
                             >
                                 <Wallet size={16} />
-                                {isConnected && account ? formatAddress(account) : "Connect"}
+                                {mounted && isConnected && account ? formatAddress(account) : "Connect"}
                             </button>
 
                             <AnimatePresence>

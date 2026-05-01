@@ -1,4 +1,9 @@
-import secrets from "secrets.js-grempe";
+// Use window.secrets from CDN to bypass Turbopack panics on native Node modules
+declare global {
+    interface Window {
+        secrets: any;
+    }
+}
 
 /**
  * Converts an ArrayBuffer to a Hex string.
@@ -35,8 +40,10 @@ export async function splitKey(key: CryptoKey, shares: number = 3, threshold: nu
     const keyHex = bufferToHex(rawKey);
 
     // 3. Split using Shamir's Secret Sharing
-    // secrets.share(secret, numShares, threshold)
-    const keyShares = secrets.share(keyHex, shares, threshold);
+    if (typeof window === "undefined" || !window.secrets) {
+        throw new Error("secrets.js not loaded");
+    }
+    const keyShares = window.secrets.share(keyHex, shares, threshold);
 
     return keyShares;
 }
@@ -48,8 +55,11 @@ export async function splitKey(key: CryptoKey, shares: number = 3, threshold: nu
  */
 export async function reconstructKey(sharesArray: string[]): Promise<CryptoKey> {
     try {
+        if (typeof window === "undefined" || !window.secrets) {
+            throw new Error("secrets.js not loaded");
+        }
         // 1. Combine shares to get Hex
-        const combinedHex = secrets.combine(sharesArray);
+        const combinedHex = window.secrets.combine(sharesArray);
 
         // 2. Convert Hex to Buffer
         const keyBuffer = hexToBuffer(combinedHex);

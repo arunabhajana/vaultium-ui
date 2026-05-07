@@ -24,6 +24,9 @@ export default function Vault() {
     // Global Error State
     const [globalError, setGlobalError] = useState<string | null>(null);
 
+    // Missing Key State
+    const [missingKeyFile, setMissingKeyFile] = useState<any | null>(null);
+
     const handleDownload = async (fileRec: any) => {
         if (downloading) return;
         setDownloading(fileRec.cid);
@@ -55,7 +58,7 @@ export default function Vault() {
                 console.log(`Found ${availableShares.length} shares for key reconstruction.`);
 
                 if (availableShares.length < 2) {
-                    alert("Access Denied: Insufficient key shares to reconstruct the key. (Zero-Trust Security)");
+                    setMissingKeyFile(fileRec);
                     throw new Error("Insufficient shares");
                 }
 
@@ -70,7 +73,9 @@ export default function Vault() {
 
             // 3. Download Chunks
             const chunkPromises = manifest.chunks.map(async (chunkCid: string) => {
-                const chunkRes = await fetch(`${gateway}${chunkCid}`);
+                const isHex = /^[0-9a-f]{64}$/i.test(chunkCid);
+                const url = isHex ? `/api/chunks/${chunkCid}` : `${gateway}${chunkCid}`;
+                const chunkRes = await fetch(url);
                 if (!chunkRes.ok) throw new Error(`Failed to fetch chunk ${chunkCid}`);
                 return await chunkRes.blob();
             });
@@ -107,10 +112,12 @@ export default function Vault() {
             window.URL.revokeObjectURL(url);
             document.body.removeChild(a);
 
-        } catch (error) {
+        } catch (error: any) {
             console.error("Download failed:", error);
-            const { parseBlockchainError } = await import("../../utils/errors");
-            setGlobalError(parseBlockchainError(error));
+            if (error.message !== "Insufficient shares") {
+                const { parseBlockchainError } = await import("../../utils/errors");
+                setGlobalError(parseBlockchainError(error));
+            }
         } finally {
             setDownloading(null);
         }
@@ -383,6 +390,48 @@ export default function Vault() {
                                     Share Access
                                 </button>
                             </div>
+                        </div>
+                    </motion.div>
+                </div>
+            )}
+
+            {/* Missing Key Modal */}
+            {missingKeyFile && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="bg-black border border-red-500/30 p-6 rounded-2xl w-full max-w-md shadow-2xl"
+                    >
+                        <div className="flex items-center gap-3 mb-4 text-red-400">
+                            <div className="p-2 bg-red-500/10 rounded-full">
+                                <ShieldCheck size={24} />
+                            </div>
+                            <h3 className="text-xl font-bold">Access Denied</h3>
+                        </div>
+                        
+                        <p className="text-white/80 text-sm mb-4 leading-relaxed">
+                            Cannot decrypt <span className="text-white font-bold">{missingKeyFile.name}</span>.
+                            <br/><br/>
+                            Vaultium uses <strong>Zero-Trust Security</strong> via Shamir's Secret Sharing. 
+                            Your encryption key was split into multiple fragments and distributed across different storages. 
+                            You currently do not have enough key fragments on this device/session to reconstruct the secret.
+                        </p>
+
+                        <div className="bg-red-500/5 border border-red-500/10 p-3 rounded-xl mb-6">
+                            <h4 className="text-xs font-bold text-red-400 mb-1 uppercase tracking-wider">How to fix this</h4>
+                            <p className="text-xs text-white/60">
+                                This usually happens if you switched browsers, cleared your local storage, or the session expired. You need at least 2 out of 3 shards to recover your file.
+                            </p>
+                        </div>
+
+                        <div className="flex justify-end gap-3">
+                            <button
+                                onClick={() => setMissingKeyFile(null)}
+                                className="px-6 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-xl text-sm font-bold transition-colors"
+                            >
+                                Close
+                            </button>
                         </div>
                     </motion.div>
                 </div>

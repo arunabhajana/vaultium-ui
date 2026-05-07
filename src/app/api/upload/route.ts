@@ -24,20 +24,22 @@ export async function POST(req: NextRequest) {
         }
 
         const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
-        const filePath = path.join(uploadDir, safeName);
-
-        // Save File Locally (Backup/Cache)
-        await writeFile(filePath, buffer);
-
+        
         // Determine if it's a chunk early
         const isChunk = safeName.includes(".part");
 
-        // Upload to IPFS (Pinata)
         let ipfsData = {
             IpfsHash: isChunk ? crypto.createHash("sha256").update(buffer).digest("hex") : null,
             PinSize: 0,
             Timestamp: new Date().toISOString()
         };
+
+        const fileNameToSave = isChunk ? ipfsData.IpfsHash : safeName;
+        const filePath = path.join(uploadDir, fileNameToSave as string);
+
+        // Save File Locally (Backup/Cache)
+        await writeFile(filePath, buffer);
+
         let pinStatus = "Pending";
 
         const uploadToPinata = async () => {

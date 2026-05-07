@@ -10,6 +10,8 @@ interface SharedRecord {
     rawMetadata: any; // Store the original file metadata
     keyJwk: JsonWebKey; // Encrypted Key (Simulated)
     sharedAt: number;
+    accessType?: string; // 'View', 'Download', 'Edit'
+    expiresAt?: number | null; // Timestamp
 }
 
 /**
@@ -21,26 +23,34 @@ export function shareFile(
     file: any,
     fromAddress: string,
     toAddress: string,
-    keyJwk: JsonWebKey
+    keyJwk: JsonWebKey,
+    accessType: string = 'Download',
+    expiresAt: number | null = null
 ) {
     if (!toAddress.startsWith("0x")) throw new Error("Invalid wallet address");
 
     const records: SharedRecord[] = JSON.parse(localStorage.getItem(SHARED_STORAGE_KEY) || "[]");
 
     // Check if already shared
-    const existing = records.find(r => r.cid === file.cid && r.to.toLowerCase() === toAddress.toLowerCase());
-    if (existing) return; // Already shared
-
+    const existingIndex = records.findIndex(r => r.cid === file.cid && r.to.toLowerCase() === toAddress.toLowerCase());
+    
     const newRecord: SharedRecord = {
         cid: file.cid,
         from: fromAddress.toLowerCase(),
         to: toAddress.toLowerCase(),
         rawMetadata: file,
         keyJwk: keyJwk,
-        sharedAt: Date.now()
+        sharedAt: Date.now(),
+        accessType,
+        expiresAt
     };
 
-    records.push(newRecord);
+    if (existingIndex >= 0) {
+        records[existingIndex] = newRecord; // Update existing share
+    } else {
+        records.push(newRecord);
+    }
+    
     localStorage.setItem(SHARED_STORAGE_KEY, JSON.stringify(records));
 }
 
@@ -56,6 +66,8 @@ export function getSharedFiles(myAddress: string): any[] {
         isShared: true,
         sharedBy: r.from,
         sharedAt: r.sharedAt,
+        accessType: r.accessType,
+        expiresAt: r.expiresAt,
         keyJwk: r.keyJwk // Attach key for decryption
     }));
 }

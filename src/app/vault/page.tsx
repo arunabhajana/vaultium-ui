@@ -20,6 +20,8 @@ export default function Vault() {
     // Share Modal State
     const [sharingFile, setSharingFile] = useState<any | null>(null);
     const [shareAddress, setShareAddress] = useState("");
+    const [shareAccessType, setShareAccessType] = useState("Download");
+    const [shareExpiration, setShareExpiration] = useState("never");
 
     // Global Error State
     const [globalError, setGlobalError] = useState<string | null>(null);
@@ -62,7 +64,19 @@ export default function Vault() {
             const gateway = process.env.NEXT_PUBLIC_IPFS_GATEWAY || "https://gateway.pinata.cloud/ipfs/";
             const manifestRes = await fetch(`${gateway}${fileRec.cid}`);
             if (!manifestRes.ok) throw new Error("Failed to fetch manifest");
-            const manifest = await manifestRes.json();
+            
+            let manifest;
+            let isLegacy = false;
+            let encryptedBlob: Blob | null = null;
+            
+            try {
+                const text = await manifestRes.clone().text();
+                manifest = JSON.parse(text);
+            } catch (e) {
+                console.warn("Manifest is not JSON, assuming legacy single-file format");
+                isLegacy = true;
+                encryptedBlob = await manifestRes.blob();
+            }
 
             setDownloadProgress(prev => prev ? { ...prev, step: 'keys' } : null);
 
@@ -102,35 +116,40 @@ export default function Vault() {
             }
 
             // 3. Download Chunks
-            setDownloadProgress(prev => prev ? { ...prev, step: 'chunks', totalChunks: manifest.chunks.length, downloadedChunks: 0 } : null);
-            
-            let downloaded = 0;
-            const chunkPromises = manifest.chunks.map(async (chunkCid: string) => {
-                const isHex = /^[0-9a-f]{64}$/i.test(chunkCid);
-                const url = isHex ? `/api/chunks/${chunkCid}` : `${gateway}${chunkCid}`;
-                const chunkRes = await fetch(url);
-                if (!chunkRes.ok) throw new Error(`Failed to fetch chunk ${chunkCid}`);
-                const blob = await chunkRes.blob();
+            if (!isLegacy) {
+                setDownloadProgress(prev => prev ? { ...prev, step: 'chunks', totalChunks: manifest.chunks.length, downloadedChunks: 0 } : null);
                 
-                downloaded++;
-                setDownloadProgress(prev => prev ? { ...prev, downloadedChunks: downloaded } : null);
-                return blob;
-            });
-            const chunks = await Promise.all(chunkPromises);
+                let downloaded = 0;
+                const chunkPromises = manifest.chunks.map(async (chunkCid: string) => {
+                    const isHex = /^[0-9a-f]{64}$/i.test(chunkCid);
+                    const url = isHex ? `/api/chunks/${chunkCid}` : `${gateway}${chunkCid}`;
+                    const chunkRes = await fetch(url);
+                    if (!chunkRes.ok) throw new Error(`Failed to fetch chunk ${chunkCid}`);
+                    const blob = await chunkRes.blob();
+                    
+                    downloaded++;
+                    setDownloadProgress(prev => prev ? { ...prev, downloadedChunks: downloaded } : null);
+                    return blob;
+                });
+                const chunks = await Promise.all(chunkPromises);
 
-            // 4. Combine
-            setDownloadProgress(prev => prev ? { ...prev, step: 'decrypt' } : null);
-            const encryptedBlob = new Blob(chunks);
+                // 4. Combine
+                setDownloadProgress(prev => prev ? { ...prev, step: 'decrypt' } : null);
+                encryptedBlob = new Blob(chunks);
+            } else {
+                setDownloadProgress(prev => prev ? { ...prev, step: 'decrypt' } : null);
+            }
 
             // Add slight delay for animation
             await new Promise(r => setTimeout(r, 500));
 
             // 5. Decrypt
+            if (!encryptedBlob) throw new Error("Encrypted blob is missing");
             const decryptedBlob = await decryptFile(encryptedBlob, key);
 
             // 6. Verify Integrity
             setDownloadProgress(prev => prev ? { ...prev, step: 'verify' } : null);
-            if (manifest.hash) {
+            if (!isLegacy && manifest && manifest.hash) {
                 const computedHash = await computeFileHash(decryptedBlob);
                 if (computedHash === manifest.hash) {
                     setVerificationStatus(prev => ({ ...prev, [fileRec.cid]: 'verified' }));
@@ -141,7 +160,7 @@ export default function Vault() {
                     alert("Warning: File hash mismatch! The file may have been tampered with.");
                 }
             } else {
-                console.warn("No hash in manifest, skipping verification");
+                console.warn("No hash in manifest or legacy file, skipping verification");
             }
 
             // Add slight delay for animation
@@ -191,11 +210,19 @@ export default function Vault() {
                 throw new Error("Cannot reconstruct key for sharing");
             }
 
+            // Determine expiration timestamp
+            let expiresAt = null;
+            if (shareExpiration === "1hour") expiresAt = Date.now() + 60 * 60 * 1000;
+            if (shareExpiration === "1day") expiresAt = Date.now() + 24 * 60 * 60 * 1000;
+            if (shareExpiration === "1week") expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000;
+
             // 2. Share
-            shareFile(sharingFile, account, shareAddress, keyJwk);
+            shareFile(sharingFile, account, shareAddress, keyJwk, shareAccessType, expiresAt);
             // We could use a toast here ideally, but sticking to prompt to not break things too much. Or just clear state. Let's just clear for now, could add success banner later.
             setSharingFile(null);
             setShareAddress("");
+            setShareAccessType("Download");
+            setShareExpiration("never");
         } catch (error) {
             console.error("Share failed", error);
             const { parseBlockchainError } = await import("../../utils/errors");
@@ -318,9 +345,19 @@ export default function Vault() {
                                                     </div>
                                                     <span>{file.name}</span>
                                                     {file.isShared && (
-                                                        <span className="text-[10px] uppercase px-1.5 py-0.5 bg-vault-violet/20 text-vault-violet rounded border border-vault-violet/30 font-bold">
-                                                            Shared by {file.sharedBy.substring(0, 4)}...
-                                                        </span>
+                                                        <div className="flex gap-2 items-center">
+                                                            <span className="text-[10px] uppercase px-1.5 py-0.5 bg-vault-violet/20 text-vault-violet rounded border border-vault-violet/30 font-bold">
+                                                                Shared by {file.sharedBy.substring(0, 4)}...
+                                                            </span>
+                                                            <span className="text-[10px] uppercase px-1.5 py-0.5 bg-white/10 text-white/70 rounded border border-white/20 font-bold">
+                                                                {file.accessType || "Download"}
+                                                            </span>
+                                                            {file.expiresAt && (
+                                                                <span className={clsx("text-[10px] uppercase px-1.5 py-0.5 rounded border font-bold", file.expiresAt < Date.now() ? "bg-red-500/20 text-red-400 border-red-500/30" : "bg-vault-emerald/20 text-vault-emerald border-vault-emerald/30")}>
+                                                                    {file.expiresAt < Date.now() ? "Expired" : "Time Limited"}
+                                                                </span>
+                                                            )}
+                                                        </div>
                                                     )}
                                                 </div>
                                                 <div className="flex items-center gap-2 pl-[42px] text-white/40 text-[10px] font-mono mt-1">
@@ -375,15 +412,17 @@ export default function Vault() {
                                             )}
                                             <button
                                                 onClick={() => handleDownload(file)}
-                                                disabled={downloading === file.cid}
-                                                className="px-4 py-2 bg-white/5 hover:bg-white/10 text-white rounded-lg text-sm font-bold transition-all border border-white/5 hover:border-vault-cyan/30 flex items-center gap-2 ml-auto"
+                                                disabled={downloading === file.cid || (file.isShared && file.expiresAt && file.expiresAt < Date.now()) || (file.isShared && file.accessType === 'View')}
+                                                className="px-4 py-2 bg-white/5 hover:bg-white/10 text-white rounded-lg text-sm font-bold transition-all border border-white/5 hover:border-vault-cyan/30 flex items-center gap-2 ml-auto disabled:opacity-50 disabled:cursor-not-allowed"
                                             >
                                                 {downloading === file.cid ? (
                                                     <Loader2 size={16} className="animate-spin text-vault-cyan" />
                                                 ) : (
                                                     <Download size={16} />
                                                 )}
-                                                {downloading === file.cid ? "Decrypting..." : "Download"}
+                                                {downloading === file.cid ? "Decrypting..." : 
+                                                 (file.isShared && file.expiresAt && file.expiresAt < Date.now()) ? "Expired" : 
+                                                 (file.isShared && file.accessType === 'View') ? "View Only" : "Download"}
                                             </button>
                                         </td>
                                     </tr>
@@ -420,6 +459,33 @@ export default function Vault() {
                                     placeholder="0x..."
                                     className="w-full bg-white/5 border border-white/10 text-white p-3 rounded-xl focus:border-vault-violet outline-none font-mono text-sm"
                                 />
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="text-xs uppercase text-white/40 font-bold tracking-wider mb-2 block">Access Type</label>
+                                    <select
+                                        value={shareAccessType}
+                                        onChange={(e) => setShareAccessType(e.target.value)}
+                                        className="w-full bg-white/5 border border-white/10 text-white p-3 rounded-xl focus:border-vault-violet outline-none text-sm appearance-none cursor-pointer"
+                                    >
+                                        <option value="Download" className="bg-black text-white">Full Download</option>
+                                        <option value="View" className="bg-black text-white">View Only</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="text-xs uppercase text-white/40 font-bold tracking-wider mb-2 block">Expiration</label>
+                                    <select
+                                        value={shareExpiration}
+                                        onChange={(e) => setShareExpiration(e.target.value)}
+                                        className="w-full bg-white/5 border border-white/10 text-white p-3 rounded-xl focus:border-vault-violet outline-none text-sm appearance-none cursor-pointer"
+                                    >
+                                        <option value="never" className="bg-black text-white">Never Expires</option>
+                                        <option value="1hour" className="bg-black text-white">1 Hour</option>
+                                        <option value="1day" className="bg-black text-white">24 Hours</option>
+                                        <option value="1week" className="bg-black text-white">1 Week</option>
+                                    </select>
+                                </div>
                             </div>
 
                             <div className="flex justify-end gap-3 mt-6">

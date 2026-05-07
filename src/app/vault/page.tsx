@@ -4,7 +4,7 @@ import { useWallet } from "@/context/WalletContext";
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { HardDrive, File, Activity, ShieldCheck } from "lucide-react";
-import { Download, CheckCircle, Loader2, AlertTriangle, Share2, XCircle, Copy } from "lucide-react";
+import { Download, CheckCircle, Loader2, AlertTriangle, Share2, XCircle, Copy, Key, Server, LockOpen, CheckCircle2 } from "lucide-react";
 import clsx from "clsx";
 import { getUserFiles } from "../../../utils/blockchain/vaultiumStorage";
 import { decryptFile, importKey, exportKey } from "../../utils/encryption";
@@ -27,19 +27,44 @@ export default function Vault() {
     // Missing Key State
     const [missingKeyFile, setMissingKeyFile] = useState<any | null>(null);
 
+    // Download Progress State
+    interface DownloadProgress {
+        fileName: string;
+        cid: string;
+        step: 'blockchain' | 'manifest' | 'keys' | 'chunks' | 'decrypt' | 'verify' | 'done' | 'error';
+        keysFound?: number;
+        keysNeeded?: number;
+        totalChunks?: number;
+        downloadedChunks?: number;
+        error?: string;
+    }
+    const [downloadProgress, setDownloadProgress] = useState<DownloadProgress | null>(null);
+
     const handleDownload = async (fileRec: any) => {
         if (downloading) return;
         setDownloading(fileRec.cid);
         setVerificationStatus(prev => ({ ...prev, [fileRec.cid]: null }));
 
+        setDownloadProgress({
+            fileName: fileRec.name,
+            cid: fileRec.cid,
+            step: 'blockchain'
+        });
+
         try {
             console.log(`Starting download for ${fileRec.name} (${fileRec.cid})`);
+
+            // 0. Verify Blockchain Metadata
+            await new Promise(r => setTimeout(r, 600)); // Visual delay for Polygon verification
+            setDownloadProgress(prev => prev ? { ...prev, step: 'manifest' } : null);
 
             // 1. Fetch Manifest
             const gateway = process.env.NEXT_PUBLIC_IPFS_GATEWAY || "https://gateway.pinata.cloud/ipfs/";
             const manifestRes = await fetch(`${gateway}${fileRec.cid}`);
             if (!manifestRes.ok) throw new Error("Failed to fetch manifest");
             const manifest = await manifestRes.json();
+
+            setDownloadProgress(prev => prev ? { ...prev, step: 'keys' } : null);
 
             // 2. Get Key
             // If shared, the key is attached to the record. If own file, get from local storage.
@@ -56,9 +81,14 @@ export default function Vault() {
 
                 const availableShares = [s1, s2, s3].filter(s => !!s);
                 console.log(`Found ${availableShares.length} shares for key reconstruction.`);
+                setDownloadProgress(prev => prev ? { ...prev, keysFound: availableShares.length, keysNeeded: 2 } : null);
+
+                // Add an artificial delay so user can see the key retrieval
+                await new Promise(r => setTimeout(r, 800));
 
                 if (availableShares.length < 2) {
                     setMissingKeyFile(fileRec);
+                    setDownloadProgress(null);
                     throw new Error("Insufficient shares");
                 }
 
@@ -72,22 +102,34 @@ export default function Vault() {
             }
 
             // 3. Download Chunks
+            setDownloadProgress(prev => prev ? { ...prev, step: 'chunks', totalChunks: manifest.chunks.length, downloadedChunks: 0 } : null);
+            
+            let downloaded = 0;
             const chunkPromises = manifest.chunks.map(async (chunkCid: string) => {
                 const isHex = /^[0-9a-f]{64}$/i.test(chunkCid);
                 const url = isHex ? `/api/chunks/${chunkCid}` : `${gateway}${chunkCid}`;
                 const chunkRes = await fetch(url);
                 if (!chunkRes.ok) throw new Error(`Failed to fetch chunk ${chunkCid}`);
-                return await chunkRes.blob();
+                const blob = await chunkRes.blob();
+                
+                downloaded++;
+                setDownloadProgress(prev => prev ? { ...prev, downloadedChunks: downloaded } : null);
+                return blob;
             });
             const chunks = await Promise.all(chunkPromises);
 
             // 4. Combine
+            setDownloadProgress(prev => prev ? { ...prev, step: 'decrypt' } : null);
             const encryptedBlob = new Blob(chunks);
+
+            // Add slight delay for animation
+            await new Promise(r => setTimeout(r, 500));
 
             // 5. Decrypt
             const decryptedBlob = await decryptFile(encryptedBlob, key);
 
             // 6. Verify Integrity
+            setDownloadProgress(prev => prev ? { ...prev, step: 'verify' } : null);
             if (manifest.hash) {
                 const computedHash = await computeFileHash(decryptedBlob);
                 if (computedHash === manifest.hash) {
@@ -102,7 +144,11 @@ export default function Vault() {
                 console.warn("No hash in manifest, skipping verification");
             }
 
-            // 7. Download Trigger
+            // Add slight delay for animation
+            await new Promise(r => setTimeout(r, 600));
+
+            // Download Trigger
+            setDownloadProgress(prev => prev ? { ...prev, step: 'done' } : null);
             const url = window.URL.createObjectURL(decryptedBlob);
             const a = document.createElement("a");
             a.href = url;
@@ -117,6 +163,7 @@ export default function Vault() {
             if (error.message !== "Insufficient shares") {
                 const { parseBlockchainError } = await import("../../utils/errors");
                 setGlobalError(parseBlockchainError(error));
+                setDownloadProgress(prev => prev ? { ...prev, step: 'error', error: parseBlockchainError(error) } : null);
             }
         } finally {
             setDownloading(null);
@@ -436,6 +483,140 @@ export default function Vault() {
                     </motion.div>
                 </div>
             )}
+
+            {/* Download Progress Modal */}
+            <AnimatePresence>
+                {downloadProgress && (
+                    <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-50 flex items-center justify-center p-4">
+                        <motion.div
+                            initial={{ opacity: 0, y: 20, scale: 0.95 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.95 }}
+                            className="bg-black/90 border border-vault-cyan/30 p-8 rounded-3xl w-full max-w-md shadow-[0_0_40px_rgba(0,255,255,0.1)] relative overflow-hidden"
+                        >
+                            {/* Close Button */}
+                            <button 
+                                onClick={() => setDownloadProgress(null)}
+                                className="absolute top-4 right-4 p-2 text-white/40 hover:text-white hover:bg-white/10 rounded-full transition-colors z-20"
+                            >
+                                <XCircle size={20} />
+                            </button>
+
+                            {/* Decorative Background */}
+                            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-vault-cyan via-vault-violet to-vault-emerald" />
+                            <div className="absolute -top-24 -right-24 w-48 h-48 bg-vault-cyan/10 rounded-full blur-3xl pointer-events-none" />
+                            
+                            <h3 className="text-2xl font-bold font-heading mb-6 flex items-center gap-3">
+                                {downloadProgress.step === 'done' ? (
+                                    <span className="text-vault-emerald flex items-center gap-2"><CheckCircle2 size={24} /> Decrypted</span>
+                                ) : downloadProgress.step === 'error' ? (
+                                    <span className="text-red-500 flex items-center gap-2"><AlertTriangle size={24} /> Failed</span>
+                                ) : (
+                                    <span className="text-white flex items-center gap-2"><Activity className="text-vault-cyan animate-pulse" size={24} /> Retrieving</span>
+                                )}
+                            </h3>
+
+                            <div className="mb-8">
+                                <p className="text-white/60 text-sm mb-1">Target File:</p>
+                                <p className="text-white font-mono text-sm truncate bg-white/5 p-2 rounded-lg border border-white/10">{downloadProgress.fileName}</p>
+                            </div>
+
+                            {/* Progress Steps List */}
+                            <div className="space-y-4 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-white/10 before:to-transparent">
+                                
+                                {/* Step 0: Polygon Metadata */}
+                                <div className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
+                                    <div className="flex items-center justify-center w-10 h-10 rounded-full border-2 border-vault-violet bg-black shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 shadow-[0_0_10px_rgba(138,43,226,0.2)] z-10">
+                                        {['manifest', 'keys', 'chunks', 'decrypt', 'verify', 'done'].includes(downloadProgress.step) ? <CheckCircle size={16} className="text-vault-violet" /> : <Activity size={16} className="text-vault-violet" />}
+                                    </div>
+                                    <div className="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] p-3 rounded-xl bg-white/5 border border-white/10">
+                                        <h4 className="text-sm font-bold text-white mb-1">Polygon Metadata</h4>
+                                        <p className="text-xs text-white/50">Fetching immutable CID from smart contract...</p>
+                                    </div>
+                                </div>
+
+                                {/* Step 1: Manifest */}
+                                <div className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
+                                    <div className={clsx("flex items-center justify-center w-10 h-10 rounded-full border-2 bg-black shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 z-10 transition-colors", 
+                                        ['keys', 'chunks', 'decrypt', 'verify', 'done'].includes(downloadProgress.step) ? "border-vault-cyan shadow-[0_0_10px_rgba(0,255,255,0.2)]" : 
+                                        downloadProgress.step === 'manifest' ? "border-vault-cyan/50" : "border-white/10")}>
+                                        {['keys', 'chunks', 'decrypt', 'verify', 'done'].includes(downloadProgress.step) ? <CheckCircle size={16} className="text-vault-cyan" /> : <Server size={16} className={downloadProgress.step === 'manifest' ? "text-vault-cyan" : "text-white/30"} />}
+                                    </div>
+                                    <div className={clsx("w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] p-3 rounded-xl border transition-all", 
+                                        ['keys', 'chunks', 'decrypt', 'verify', 'done'].includes(downloadProgress.step) || downloadProgress.step === 'manifest' ? "bg-white/5 border-white/10" : "opacity-40 border-transparent")}>
+                                        <h4 className="text-sm font-bold text-white mb-1">File Manifest</h4>
+                                        <p className="text-xs text-white/50">
+                                            {downloadProgress.step === 'blockchain' ? "Waiting..." : "Fetching structure from IPFS..."}
+                                        </p>
+                                    </div>
+                                </div>
+
+                                {/* Step 2: Keys */}
+                                <div className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
+                                    <div className={clsx("flex items-center justify-center w-10 h-10 rounded-full border-2 bg-black shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 z-10 transition-colors", 
+                                        ['chunks', 'decrypt', 'verify', 'done'].includes(downloadProgress.step) ? "border-vault-violet shadow-[0_0_10px_rgba(138,43,226,0.2)]" : 
+                                        downloadProgress.step === 'keys' ? "border-vault-violet/50" : "border-white/10")}>
+                                        {['chunks', 'decrypt', 'verify', 'done'].includes(downloadProgress.step) ? <CheckCircle size={16} className="text-vault-violet" /> : <Key size={16} className={downloadProgress.step === 'keys' ? "text-vault-violet" : "text-white/30"} />}
+                                    </div>
+                                    <div className={clsx("w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] p-3 rounded-xl border transition-all", 
+                                        ['chunks', 'decrypt', 'verify', 'done'].includes(downloadProgress.step) || downloadProgress.step === 'keys' ? "bg-white/5 border-white/10" : "opacity-40 border-transparent")}>
+                                        <h4 className="text-sm font-bold text-white mb-1">Key Retrieval</h4>
+                                        <p className="text-xs text-white/50">
+                                            {downloadProgress.step === 'manifest' ? "Waiting..." : 
+                                             downloadProgress.keysFound !== undefined ? `Found ${downloadProgress.keysFound}/${downloadProgress.keysNeeded} Shamir fragments` : "Locating fragments..."}
+                                        </p>
+                                    </div>
+                                </div>
+
+                                {/* Step 3: Download */}
+                                <div className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
+                                    <div className={clsx("flex items-center justify-center w-10 h-10 rounded-full border-2 bg-black shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 z-10 transition-colors", 
+                                        ['decrypt', 'verify', 'done'].includes(downloadProgress.step) ? "border-vault-cyan shadow-[0_0_10px_rgba(0,255,255,0.2)]" : 
+                                        downloadProgress.step === 'chunks' ? "border-vault-cyan/50" : "border-white/10")}>
+                                        {['decrypt', 'verify', 'done'].includes(downloadProgress.step) ? <CheckCircle size={16} className="text-vault-cyan" /> : <Download size={16} className={downloadProgress.step === 'chunks' ? "text-vault-cyan" : "text-white/30"} />}
+                                    </div>
+                                    <div className={clsx("w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] p-3 rounded-xl border transition-all", 
+                                        ['decrypt', 'verify', 'done'].includes(downloadProgress.step) || downloadProgress.step === 'chunks' ? "bg-white/5 border-white/10" : "opacity-40 border-transparent")}>
+                                        <h4 className="text-sm font-bold text-white mb-1">Fetch Chunks</h4>
+                                        <p className="text-xs text-white/50">
+                                            {downloadProgress.step === 'chunks' && downloadProgress.totalChunks ? 
+                                                `Downloading ${downloadProgress.downloadedChunks}/${downloadProgress.totalChunks}` : 
+                                             ['decrypt', 'verify', 'done'].includes(downloadProgress.step) ? "All chunks downloaded" : "Waiting..."}
+                                        </p>
+                                        {downloadProgress.step === 'chunks' && downloadProgress.totalChunks && (
+                                            <div className="h-1 bg-white/10 rounded-full mt-2 overflow-hidden">
+                                                <motion.div 
+                                                    className="h-full bg-vault-cyan" 
+                                                    initial={{ width: 0 }} 
+                                                    animate={{ width: `${(downloadProgress.downloadedChunks! / downloadProgress.totalChunks) * 100}%` }} 
+                                                />
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Step 4: Decrypt & Combine */}
+                                <div className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
+                                    <div className={clsx("flex items-center justify-center w-10 h-10 rounded-full border-2 bg-black shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 z-10 transition-colors", 
+                                        ['verify', 'done'].includes(downloadProgress.step) ? "border-vault-emerald shadow-[0_0_10px_rgba(16,185,129,0.2)]" : 
+                                        downloadProgress.step === 'decrypt' ? "border-vault-emerald/50" : "border-white/10")}>
+                                        {['verify', 'done'].includes(downloadProgress.step) ? <CheckCircle size={16} className="text-vault-emerald" /> : <LockOpen size={16} className={downloadProgress.step === 'decrypt' ? "text-vault-emerald" : "text-white/30"} />}
+                                    </div>
+                                    <div className={clsx("w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] p-3 rounded-xl border transition-all", 
+                                        ['verify', 'done'].includes(downloadProgress.step) || downloadProgress.step === 'decrypt' ? "bg-white/5 border-white/10" : "opacity-40 border-transparent")}>
+                                        <h4 className="text-sm font-bold text-white mb-1">AES Decryption</h4>
+                                        <p className="text-xs text-white/50">
+                                            {downloadProgress.step === 'decrypt' ? "Decrypting..." : 
+                                             ['verify', 'done'].includes(downloadProgress.step) ? "Decrypted successfully" : "Waiting..."}
+                                        </p>
+                                    </div>
+                                </div>
+
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
         </div>
     );
 }

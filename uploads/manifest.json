@@ -1,11 +1,11 @@
 {
-  "name": "course-tracker.html",
-  "size": 40988,
-  "type": "text/html",
+  "name": "Base-Paper.pdf",
+  "size": 402912,
+  "type": "application/pdf",
   "chunkSize": 1048576,
   "chunks": [
-    "QmSgPnxFnLS6R69jNVwcjDzjNrDPt4gdrphPApAsgwGPiZ"
+    "31e8e5341ce8df297448d225ad9e2b65e6932eee9b59ff072fd4c65860c6e6cf"
   ],
-  "hash": "0c47935182165dba536fc0dc5ed2bf5a3635a92789d30828534243dcf48fc0b0",
-  "uploadedAt": "2026-05-01T03:12:22.593Z"
+  "hash": "8d087986b2a93b9ab2f17f8bff38c1129708a57dac72e26db0c41ecd44dba547",
+  "uploadedAt": "2026-05-07T04:51:33.556Z"
 }

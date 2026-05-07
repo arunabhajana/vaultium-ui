@@ -92,37 +92,87 @@ export default function UploadPage() {
                 const chunks = createChunks(encryptedBlob, chunkSize);
                 console.log(`Split ${file.name} into ${chunks.length} chunks (Size: ${chunkSize})`);
 
-                // 4. Parallel Upload
+                // 4. Parallel Upload with Concurrency Limit & XHR for Progress
                 setActiveUploads(prev => prev.map(u => u.name === file.name ? { ...u, status: "uploading", progress: 40, totalChunks: chunks.length } : u));
 
-                let completedChunks = 0;
                 const totalChunks = chunks.length;
+                const chunkProgresses = new Array(totalChunks).fill(0); // 0 to 1
 
-                const uploadPromises = chunks.map(async (chunk, index) => {
-                    const formData = new FormData();
-                    // Append index to name to avoid collisions in simple storage if needed, though API handles uniqueness locally.
-                    // Important: We're uploading raw chunks.
-                    formData.append("file", chunk, `${file.name}.part${index}`);
-
-                    console.log(`Uploading chunk ${index + 1}/${totalChunks}`);
-
-                    const res = await fetch("/api/upload", {
-                        method: "POST",
-                        body: formData,
-                    });
-
-                    if (!res.ok) throw new Error(`Chunk ${index} upload failed`);
-                    const data = await res.json();
-
-                    completedChunks++;
+                const updateGlobalProgress = () => {
+                    const totalCompleted = chunkProgresses.reduce((acc, val) => acc + val, 0);
                     // Update progress: 40% -> 90% range for uploads
-                    const currentProgress = 40 + ((completedChunks / totalChunks) * 50);
+                    const currentProgress = 40 + ((totalCompleted / totalChunks) * 50);
                     setActiveUploads(prev => prev.map(u => u.name === file.name ? { ...u, progress: currentProgress } : u));
+                };
 
-                    return data.cid;
+                const uploadChunk = (chunk: Blob, index: number): Promise<string> => {
+                    return new Promise((resolve, reject) => {
+                        const xhr = new XMLHttpRequest();
+                        const formData = new FormData();
+                        formData.append("file", chunk, `${file.name}.part${index}`);
+
+                        xhr.upload.onprogress = (event) => {
+                            if (event.lengthComputable) {
+                                chunkProgresses[index] = event.loaded / event.total;
+                                updateGlobalProgress();
+                            }
+                        };
+
+                        xhr.onload = () => {
+                            if (xhr.status >= 200 && xhr.status < 300) {
+                                try {
+                                    const data = JSON.parse(xhr.responseText);
+                                    resolve(data.cid);
+                                } catch (e) {
+                                    resolve("");
+                                }
+                            } else {
+                                reject(new Error(`Chunk ${index} upload failed`));
+                            }
+                        };
+
+                        xhr.onerror = () => reject(new Error(`Network error on chunk ${index}`));
+
+                        xhr.open("POST", "/api/upload");
+                        xhr.send(formData);
+                    });
+                };
+
+                const CONCURRENCY_LIMIT = 5;
+                let activeCount = 0;
+                let currentIndex = 0;
+                const chunkCids: string[] = new Array(totalChunks).fill("");
+
+                await new Promise<void>((resolve, reject) => {
+                    const processNext = async () => {
+                        if (currentIndex >= totalChunks) {
+                            if (activeCount === 0) resolve();
+                            return;
+                        }
+
+                        const index = currentIndex++;
+                        activeCount++;
+
+                        try {
+                            const cid = await uploadChunk(chunks[index], index);
+                            chunkCids[index] = cid || `local-cid-${index}`;
+                            chunkProgresses[index] = 1; // Force 100% on success
+                            updateGlobalProgress();
+                        } catch (err) {
+                            reject(err);
+                            return;
+                        }
+
+                        activeCount--;
+                        processNext();
+                    };
+
+                    // Start initial batch of workers
+                    for (let i = 0; i < Math.min(CONCURRENCY_LIMIT, totalChunks); i++) {
+                        processNext();
+                    }
                 });
 
-                const chunkCids = await Promise.all(uploadPromises);
                 console.log("All chunks uploaded:", chunkCids);
 
                 // 5. Create & Upload Manifest

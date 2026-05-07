@@ -29,50 +29,62 @@ export async function POST(req: NextRequest) {
         // Save File Locally (Backup/Cache)
         await writeFile(filePath, buffer);
 
+        // Determine if it's a chunk early
+        const isChunk = safeName.includes(".part");
+
         // Upload to IPFS (Pinata)
         let ipfsData = {
-            IpfsHash: null,
+            IpfsHash: isChunk ? crypto.createHash("sha256").update(buffer).digest("hex") : null,
             PinSize: 0,
             Timestamp: new Date().toISOString()
         };
         let pinStatus = "Pending";
 
-        try {
-            const jwt = process.env.PINATA_JWT;
-            if (jwt) {
-                const pinataFormData = new FormData();
-                // Create a blob from the buffer to send to Pinata
-                const fileBlob = new Blob([buffer], { type: file.type || "application/octet-stream" });
-                pinataFormData.append("file", fileBlob, safeName);
+        const uploadToPinata = async () => {
+            try {
+                const jwt = process.env.PINATA_JWT;
+                if (jwt) {
+                    const pinataFormData = new FormData();
+                    // Create a blob from the buffer to send to Pinata
+                    const fileBlob = new Blob([buffer], { type: file.type || "application/octet-stream" });
+                    pinataFormData.append("file", fileBlob, safeName);
 
-                const pinataRes = await fetch("https://api.pinata.cloud/pinning/pinFileToIPFS", {
-                    method: "POST",
-                    headers: {
-                        Authorization: `Bearer ${jwt}`,
-                    },
-                    body: pinataFormData,
-                });
+                    const pinataRes = await fetch("https://api.pinata.cloud/pinning/pinFileToIPFS", {
+                        method: "POST",
+                        headers: {
+                            Authorization: `Bearer ${jwt}`,
+                        },
+                        body: pinataFormData,
+                    });
 
-                if (pinataRes.ok) {
-                    ipfsData = await pinataRes.json();
-                    pinStatus = "Pinned to IPFS";
-                    console.log(`📌 Pinned to IPFS: ${ipfsData.IpfsHash}`);
+                    if (pinataRes.ok) {
+                        const data = await pinataRes.json();
+                        ipfsData = data;
+                        pinStatus = "Pinned to IPFS";
+                        console.log(`📌 Pinned to IPFS: ${data.IpfsHash}`);
+                    } else {
+                        console.error("Pinata Upload Failed:", await pinataRes.text());
+                        pinStatus = "IPFS Upload Failed";
+                    }
                 } else {
-                    console.error("Pinata Upload Failed:", await pinataRes.text());
-                    pinStatus = "IPFS Upload Failed";
+                    console.warn("⚠️ PINATA_JWT not found. Skipping IPFS upload.");
+                    pinStatus = "Skipped (No Key)";
                 }
-            } else {
-                console.warn("⚠️ PINATA_JWT not found. Skipping IPFS upload.");
-                pinStatus = "Skipped (No Key)";
+            } catch (ipfsError) {
+                console.error("IPFS Error:", ipfsError);
+                pinStatus = "IPFS Error";
             }
-        } catch (ipfsError) {
-            console.error("IPFS Error:", ipfsError);
-            pinStatus = "IPFS Error";
+        };
+
+        // If it's a chunk, don't wait for IPFS pinning (fire and forget) to speed up response
+        if (isChunk) {
+            uploadToPinata().catch(console.error);
+            pinStatus = "Background Pinned";
+        } else {
+            await uploadToPinata();
         }
 
         // Update Metadata (Only if NOT a chunk part)
-        const isChunk = safeName.includes(".part");
-
         if (!isChunk) {
             const metadataPath = path.join(uploadDir, "metadata.json");
             let metadata = [];

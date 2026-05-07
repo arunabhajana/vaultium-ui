@@ -1,4 +1,4 @@
-export const CHUNK_SIZE = 1 * 1024 * 1024; // 1MB
+export const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB
 
 /**
  * Splits a file (or Blob) into fixed-size chunks.

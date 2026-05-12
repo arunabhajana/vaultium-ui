@@ -1,5 +1,77 @@
 [
   {
+    "id": "c689aaa7-c608-4bac-ac5a-c0a0e546a27a",
+    "name": "integrity_tampered.txt",
+    "filename": "integrity_tampered.txt",
+    "size": 46,
+    "type": "text/plain",
+    "uploadedAt": "2026-05-07T08:28:46.705Z",
+    "status": "Encrypted & Stored",
+    "cid": "QmQkgjTnyqsnG4puFXtgugE2XoTFy8xYGadP5bBLmNjLsz",
+    "ipfsGateway": "https://gateway.pinata.cloud/ipfs/",
+    "pinStatus": "Pinned to IPFS"
+  },
+  {
+    "id": "1d9e79c5-d61c-43e6-b81b-75dee54b5a60",
+    "name": "integrity.txt",
+    "filename": "integrity.txt",
+    "size": 45,
+    "type": "text/plain",
+    "uploadedAt": "2026-05-07T08:28:45.856Z",
+    "status": "Encrypted & Stored",
+    "cid": "QmWPsWcVB8M1WWzrjrZ7ptTuYVXPPECra5YAASoA739ytL",
+    "ipfsGateway": "https://gateway.pinata.cloud/ipfs/",
+    "pinStatus": "Pinned to IPFS"
+  },
+  {
+    "id": "c4b80c6f-65ac-47e5-adb0-1c7fcc7f45a7",
+    "name": "testing-1mb-enc.bin",
+    "filename": "testing-1mb-enc.bin",
+    "size": 1048604,
+    "type": "application/octet-stream",
+    "uploadedAt": "2026-05-07T08:28:13.746Z",
+    "status": "Encrypted & Stored",
+    "cid": "QmP6ZjQedSi5mGg5YdWeNDU4GN5pWMS1XnVBh21AoUuQuX",
+    "ipfsGateway": "https://gateway.pinata.cloud/ipfs/",
+    "pinStatus": "Pinned to IPFS"
+  },
+  {
+    "id": "394e7433-777d-4948-bd51-b57bbc3520ef",
+    "name": "Base-Paper.pdf",
+    "filename": "manifest.json",
+    "size": 402912,
+    "type": "application/pdf",
+    "uploadedAt": "2026-05-07T08:26:08.841Z",
+    "status": "Encrypted & Stored",
+    "cid": "QmdoG9jvcGRPXaEXLi9ZSfpffKVvSbpw5YhqDkTjiJyHGr",
+    "ipfsGateway": "https://gateway.pinata.cloud/ipfs/",
+    "pinStatus": "Pinned to IPFS"
+  },
+  {
+    "id": "3c54111d-e137-4a71-9485-a2207bd3e3d0",
+    "name": "Base-Paper.pdf",
+    "filename": "manifest.json",
+    "size": 402912,
+    "type": "application/pdf",
+    "uploadedAt": "2026-05-07T08:25:01.346Z",
+    "status": "Encrypted & Stored",
+    "cid": "QmWYYh5naoL9GaQLBFCXtLBNjnjTrTLeUynEjJNSnBwZ37",
+    "ipfsGateway": "https://gateway.pinata.cloud/ipfs/",
+    "pinStatus": "Pinned to IPFS"
+  },
+  {
+    "id": "f9a351f9-6e37-45b0-80b1-205aa2ea0c75",
+    "name": "testing-1mb-enc.bin",
+    "filename": "testing-1mb-enc.bin",
+    "size": 1048604,
+    "type": "application/octet-stream",
+    "uploadedAt": "2026-05-07T07:30:53.466Z",
+    "status": "Encrypted & Stored",
+    "cid": "QmaCVW48CLDS6B2UXaWamqs9RnLuSiTrtKHAuxM7WSNk72",
+    "ipfsGateway": "https://gateway.pinata.cloud/ipfs/",
+    "pinStatus": "Pinned to IPFS"
+  },
+  {
     "id": "48138b7c-dd4e-4564-ad36-54a444b12128",
     "name": "Base-Paper.pdf",
     "filename": "manifest.json",

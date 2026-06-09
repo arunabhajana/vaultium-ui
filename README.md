@@ -6,6 +6,11 @@
 ![Vaultium Banner](https://via.placeholder.com/1200x400?text=Vaultium+Dashboard+Preview)
 *(Replace this image with a real screenshot of your dashboard)*
 
+## 🤝 Contributors
+
+- [Arunabha Jana](https://github.com/arunabhajana)
+- [Anirudh Shadipuram](https://github.com/anirudh3369)
+
 ## 🚀 Overview
 
 **Vaultium** is a cutting-edge decentralized storage application that leverages the power of **IPFS** for storage and **Ethereum** (Polygon Amoy Testnet) for access control. Unlike traditional cloud storage, Vaultium ensures that you—and only you—control your data.

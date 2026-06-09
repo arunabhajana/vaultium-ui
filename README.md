@@ -3,9 +3,6 @@
 > **Secure. Decentralized. Private.**
 > The next generation of cloud storage, built on IPFS and secured by Zero-Knowledge Proofs.
 
-![Vaultium Banner](https://via.placeholder.com/1200x400?text=Vaultium+Dashboard+Preview)
-*(Replace this image with a real screenshot of your dashboard)*
-
 ## 🤝 Contributors
 
 - [Arunabha Jana](https://github.com/arunabhajana)
